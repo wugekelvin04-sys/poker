@@ -6,11 +6,15 @@
   var SUIT_NAMES = ['黑桃', '红桃', '方块', '梅花'];
   var $ = function (id) { return document.getElementById(id); };
 
-  // 槽位顺序：手牌 2 张 + 公共牌 5 张，决定自动跳到下一张的顺序
+  // 槽位顺序：手牌 2 张 + 公共牌 5 张。
+  // group 决定连选范围：选完一张自动跳到同组的下一个空位，本组填满就收起抽屉，
+  // 不会跨组（选完手牌不会窜到公共牌去）。
   var SLOTS = [
-    { kind: 'hero', i: 0 }, { kind: 'hero', i: 1 },
-    { kind: 'board', i: 0 }, { kind: 'board', i: 1 }, { kind: 'board', i: 2 },
-    { kind: 'board', i: 3 }, { kind: 'board', i: 4 }
+    { kind: 'hero', i: 0, group: 'hero' }, { kind: 'hero', i: 1, group: 'hero' },
+    { kind: 'board', i: 0, group: 'flop' }, { kind: 'board', i: 1, group: 'flop' },
+    { kind: 'board', i: 2, group: 'flop' },
+    { kind: 'board', i: 3, group: 'turn' },
+    { kind: 'board', i: 4, group: 'river' }
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
@@ -19,7 +23,8 @@
     board: [null, null, null, null, null],
     players: 6,
     pot: '',
-    call: ''
+    call: '',
+    hideHero: false      // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
   };
   var active = -1;      // 当前正在选的槽位下标
   var lastResult = null;
@@ -38,6 +43,7 @@
         if (Array.isArray(s.board) && s.board.length === 5) state.board = s.board;
         if (s.players >= 2 && s.players <= 10) state.players = s.players;
         state.pot = s.pot || ''; state.call = s.call || '';
+        state.hideHero = !!s.hideHero;
       }
     } catch (e) {}
   }
@@ -63,7 +69,10 @@
       var el = document.createElement('button');
       el.className = 'slot';
       var c = slotCard(k);
-      if (c !== null) {
+      var masked = state.hideHero && s.group === 'hero' && c !== null;
+      if (masked) {
+        el.classList.add('back');
+      } else if (c !== null) {
         el.classList.add('filled');
         if (isRed(c)) el.classList.add('red');
         el.innerHTML = cardHTML(c);
@@ -71,8 +80,12 @@
         el.textContent = '+';
       }
       if (k === active) el.classList.add('active');
-      el.setAttribute('aria-label', SLOT_LABELS[k]);
-      el.addEventListener('click', function () { openPicker(k); });
+      el.setAttribute('aria-label', masked ? '手牌已隐藏，点一下显示' : SLOT_LABELS[k]);
+      // 盖着的时候点一下先翻开，翻开状态再点才是换牌
+      el.addEventListener('click', function () {
+        if (masked) { state.hideHero = false; save(); renderSlots(); runNow(); }
+        else openPicker(k);
+      });
       (s.kind === 'hero' ? hero : board).appendChild(el);
     });
 
@@ -84,7 +97,8 @@
       var hi = Math.max(ra, rb), lo = Math.min(ra, rb);
       note = RANKS[hi] + RANKS[lo] + (ra === rb ? '' : ((a & 3) === (b & 3) ? 's' : 'o'));
     }
-    $('heroNotation').textContent = note;
+    $('heroNotation').textContent = state.hideHero ? '' : note;
+    $('toggleHero').textContent = state.hideHero ? '显示' : '隐藏';
 
     var n = state.board.filter(function (c) { return c !== null; }).length;
     $('streetName').textContent =
@@ -156,9 +170,9 @@
       if (k !== active && slotCard(k) === c) return;
     }
     setSlotCard(active, c);
-    // 自动跳到后面第一个空槽，连着选不用反复开关
-    var next = -1;
-    for (var k = active + 1; k < SLOTS.length; k++) {
+    // 自动跳到同一组里后面第一个空槽，连着选不用反复开关；本组选完就收起
+    var group = SLOTS[active].group, next = -1;
+    for (var k = active + 1; k < SLOTS.length && SLOTS[k].group === group; k++) {
       if (slotCard(k) === null) { next = k; break; }
     }
     save(); compute();
@@ -173,25 +187,65 @@
     clearTimeout(fallbackTimer); fallbackTimer = null;
   }
 
-  /* Worker 起不来或没回音时，退回主线程算。
-     少跑一些次数、限时 700ms，宁可精度低一点也不能卡住不出结果。 */
-  function runOnMainThread(hero, board, id, why) {
+  function stopAll() { stopWorker(); clearTimeout(mainLoopTimer); mainLoopTimer = null; }
+
+  /* 把两次模拟的原始计数合并。simulate 返回的是比率，乘回次数即可还原。 */
+  function mergeResults(a, b) {
+    var n = a.n + b.n;
+    var win = a.win + b.win, tie = a.tie + b.tie, lose = a.lose + b.lose;
+    // 平局权益 = 权益×次数 − 独赢次数
+    var tieEq = (a.equity * a.n - a.win) + (b.equity * b.n - b.win);
+    var cat = [];
+    for (var i = 0; i < 9; i++) cat.push((a.catCounts[i] * a.n + b.catCounts[i] * b.n) / n);
+    var eq = (win + tieEq) / n;
+    return {
+      n: n, win: win, tie: tie, lose: lose,
+      winRate: win / n, tieRate: tie / n, loseRate: lose / n, equity: eq,
+      margin: 1.96 * Math.sqrt(Math.max(eq * (1 - eq), 1e-9) / n),
+      catCounts: cat, exact: false, elapsed: 0
+    };
+  }
+
+  /* Worker 起不来或没回音时退回主线程。
+     切成小片轮流跑，界面不会僵住，次数照样能跑满。 */
+  var mainLoopTimer = null;
+
+  function runOnMainThread(hero, board, id) {
     if (id !== runId) return;
     stopWorker();
+    clearTimeout(mainLoopTimer);
     if (!window.PokerSim) { $('eqNote').textContent = '计算模块没能加载，刷新试试'; return; }
-    try {
-      var res = (board.length === 5 && state.players === 2)
-        ? PokerSim.enumerateShowdownHeadsUp(hero, board)
-        : PokerSim.simulate({
-            hero: hero, board: board, players: state.players,
-            maxIterations: 120000, timeLimitMs: 700
-          });
-      lastResult = res;
-      renderResult(res, true);
-      $('eqNote').textContent += ' · 主线程' + (why ? '（' + why + '）' : '');
-    } catch (err) {
-      $('eqNote').textContent = '出错：' + String((err && err.message) || err);
+
+    if (board.length === 5 && state.players === 2) {
+      try {
+        var ex = PokerSim.enumerateShowdownHeadsUp(hero, board);
+        lastResult = ex; renderResult(ex, true);
+      } catch (err) { $('eqNote').textContent = '出错：' + String((err && err.message) || err); }
+      return;
     }
+
+    var acc = null, started = Date.now();
+    var CHUNK = 10000, TARGET = 250000, BUDGET = 2500;
+
+    function step() {
+      if (id !== runId) return;
+      try {
+        var part = PokerSim.simulate({
+          hero: hero, board: board, players: state.players,
+          maxIterations: CHUNK, timeLimitMs: 0
+        });
+        acc = acc ? mergeResults(acc, part) : part;
+      } catch (err) {
+        $('eqNote').textContent = '出错：' + String((err && err.message) || err);
+        return;
+      }
+      var done = acc.n >= TARGET || Date.now() - started > BUDGET;
+      lastResult = acc;
+      renderResult(acc, done);
+      $('eqNote').textContent += ' · 主线程';
+      if (!done) mainLoopTimer = setTimeout(step, 0);
+    }
+    mainLoopTimer = setTimeout(step, 0);
   }
 
   function compute() {
@@ -203,9 +257,9 @@
     var hero = state.hero.filter(function (c) { return c !== null; });
     var board = state.board.filter(function (c) { return c !== null; });
 
-    // 先作废上一次计算，否则清空手牌时旧 worker 的结果会把界面覆盖回去
+    // 先作废上一次计算，否则清空手牌时旧结果会把界面覆盖回去
     runId++;
-    stopWorker();
+    stopAll();
     renderMadeHand(hero, board);
 
     if (hero.length < 2) {
@@ -229,13 +283,13 @@
       worker = new Worker('worker.js');
     } catch (err) {
       // 某些浏览器或隐私设置下根本创建不了 Worker
-      runOnMainThread(hero, board, id, '本机不支持后台线程');
+      runOnMainThread(hero, board, id);
       return;
     }
 
     worker.onerror = function (ev) {
       if (ev && ev.preventDefault) ev.preventDefault();
-      runOnMainThread(hero, board, id, '后台线程出错');
+      runOnMainThread(hero, board, id);
     };
     worker.onmessage = function (e) {
       var m = e.data;
@@ -248,7 +302,7 @@
     };
     // worker 迟迟不回音也要出结果，绝不能停在「计算中…」
     fallbackTimer = setTimeout(function () {
-      runOnMainThread(hero, board, id, '后台线程无响应');
+      runOnMainThread(hero, board, id);
     }, 4000);
 
     worker.postMessage({
@@ -272,6 +326,16 @@
     $('legTie').textContent = pct(r.tieRate, r.tieRate < 0.01 ? 2 : 1);
     $('legLose').textContent = pct(r.loseRate);
 
+    // 胜率含平局分摊，和「独赢」不是一回事，容易被误会成算错了
+    var ex = $('eqExplain');
+    if (r.tieRate >= 0.005) {
+      ex.hidden = false;
+      ex.innerHTML = '胜率 = 独赢 <b>' + pct(r.winRate) + '</b> + 平分底池折算的 <b>'
+        + pct(r.equity - r.winRate) + '</b>';
+    } else {
+      ex.hidden = true;
+    }
+
     if (r.exact) {
       $('eqNote').textContent = '精确枚举 ' + r.n.toLocaleString() + ' 种可能，无误差';
     } else {
@@ -285,16 +349,25 @@
 
   // ---------- 当前牌型与成牌分布 ----------
   function renderMadeHand(hero, board) {
-    if (hero.length < 2) { $('made').textContent = '—'; return; }
+    var el = $('made');
+    el.classList.remove('hidden-hand');
+    if (hero.length < 2) { el.textContent = '—'; return; }
     var score = E.evalHand(hero.concat(board));
-    $('made').textContent = E.describe(score);
-    $('made').dataset.cat = score >>> 20;
+    el.dataset.cat = score >>> 20;
+    if (state.hideHero) {
+      // 牌型会直接暴露手牌，一并遮住
+      el.textContent = '已隐藏（点手牌显示）';
+      el.classList.add('hidden-hand');
+    } else {
+      el.textContent = E.describe(score);
+    }
   }
 
   function renderDist(r) {
     var box = $('dist');
     var boardN = state.board.filter(function (c) { return c !== null; }).length;
     var curCat = parseInt($('made').dataset.cat || '0', 10);
+    var markCur = !state.hideHero;   // 高亮当前牌型同样会泄漏手牌
 
     if (boardN >= 5) {
       // 河牌已发完，不存在“还能成什么牌”
@@ -302,16 +375,20 @@
       $('improve').textContent = '牌已发完，这就是最终牌型';
       return;
     }
-    var improve = 0;
-    for (var c = curCat + 1; c <= 8; c++) improve += r.catCounts[c];
-    $('improve').innerHTML = '河牌发完后牌型变大的概率 <b>' + pct(improve) + '</b>';
+    if (state.hideHero) {
+      $('improve').textContent = '';
+    } else {
+      var improve = 0;
+      for (var c = curCat + 1; c <= 8; c++) improve += r.catCounts[c];
+      $('improve').innerHTML = '河牌发完后牌型变大的概率 <b>' + pct(improve) + '</b>';
+    }
 
     var max = Math.max.apply(null, r.catCounts);
     var html = '';
     for (var i = 8; i >= 0; i--) {
       var p = r.catCounts[i];
       if (p < 0.0005) continue;
-      html += '<div class="dist-row' + (i === curCat ? ' cur' : '') + '">'
+      html += '<div class="dist-row' + (markCur && i === curCat ? ' cur' : '') + '">'
         + '<span class="nm">' + E.CAT_NAMES[i] + '</span>'
         + '<span class="tr"><span class="fl" style="width:' + (p / max * 100).toFixed(1) + '%"></span></span>'
         + '<span class="vl">' + pct(p, p < 0.01 ? 2 : 1) + '</span></div>';
@@ -348,6 +425,10 @@
     $('deck').addEventListener('click', function (e) {
       var b = e.target.closest('.pick');
       if (b) pickCard(parseInt(b.dataset.card, 10));
+    });
+    $('toggleHero').addEventListener('click', function () {
+      state.hideHero = !state.hideHero;
+      save(); renderSlots(); runNow();
     });
     $('sheetClose').addEventListener('click', closePicker);
     $('sheetMask').addEventListener('click', closePicker);

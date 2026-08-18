@@ -30,13 +30,13 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:8px;font-si
   border-bottom:1px solid var(--line);
 }
 .eq-label{font-size:12px;color:var(--dim);letter-spacing:.08em}
-.eq-main{display:flex;align-items:baseline;gap:2px;margin:-2px 0 2px}
+.eq-main{display:flex;align-items:baseline;gap:3px;margin:1px 0 2px}
 #eqValue{
-  font-size:56px;line-height:1.05;font-weight:700;letter-spacing:-.03em;
+  font-size:34px;line-height:1.1;font-weight:700;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
   transition:color .25s;
 }
-.eq-unit{font-size:22px;font-weight:600;color:var(--muted)}
+.eq-unit{font-size:15px;font-weight:600;color:var(--muted)}
 .eq-note{font-size:12px;color:var(--dim);min-height:17px;font-variant-numeric:tabular-nums}
 .bar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--panel-2);margin:10px 0 8px}
 .bar span{transition:width .25s ease}
@@ -45,6 +45,8 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:8px;font-si
 .legend b{font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
 .dot-w{background:var(--win)} .dot-t{background:var(--tie)} .dot-l{background:var(--lose)}
+.eq-explain{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.5}
+.eq-explain b{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
 
 /* ---------- 面板 ---------- */
 main{padding:14px 14px calc(var(--safe-b) + 28px);display:flex;flex-direction:column;gap:12px}
@@ -68,7 +70,19 @@ main{padding:14px 14px calc(var(--safe-b) + 28px);display:flex;flex-direction:co
 .slot.active{box-shadow:0 0 0 2.5px var(--accent)}
 .slot .r{font-size:26px;font-weight:650;line-height:1;letter-spacing:-.02em}
 .slot .s{font-size:17px;line-height:1.2;margin-top:1px}
-.slots:not(.board) .slot{max-width:26%}
+/* 手牌故意做得比公共牌小，桌上不容易被旁边的人瞄到 */
+.slots:not(.board) .slot{flex:0 0 52px;width:52px;max-width:none}
+.slots:not(.board) .slot .r{font-size:21px}
+.slots:not(.board) .slot .s{font-size:13px}
+
+/* 隐藏状态：显示成牌背，不影响任何计算 */
+.slot.back{
+  background:#232c3a;border:1px solid #313c4e;color:transparent;
+  background-image:repeating-linear-gradient(45deg,
+    rgba(255,255,255,.05) 0 3px, transparent 3px 7px);
+}
+.slot.back::after{content:'•••';color:#5a6478;font-size:13px;letter-spacing:1px}
+.acts{display:flex;gap:14px}
 /* 与卡槽共用同一套 5 列网格，标签才能严格对齐到对应的牌 */
 .board-legend{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:7px;
   font-size:11px;color:var(--dim);text-align:center}
@@ -85,6 +99,7 @@ main{padding:14px 14px calc(var(--safe-b) + 28px);display:flex;flex-direction:co
 
 /* ---------- 牌型 / 分布 ---------- */
 .made{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.made.hidden-hand{color:var(--dim);font-size:15px;font-weight:400}
 .improve{font-size:12px;color:var(--muted);margin-top:3px;min-height:17px}
 .improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
 .dist{margin-top:12px;display:flex;flex-direction:column;gap:6px}

@@ -25,15 +25,18 @@
     <span class="seg-w" id="barWin"></span><span class="seg-t" id="barTie"></span><span class="seg-l" id="barLose"></span>
   </div>
   <div class="legend">
-    <span><i class="dot dot-w"></i>胜 <b id="legWin">—</b></span>
-    <span><i class="dot dot-t"></i>平 <b id="legTie">—</b></span>
-    <span><i class="dot dot-l"></i>负 <b id="legLose">—</b></span>
+    <span><i class="dot dot-w"></i>独赢 <b id="legWin">—</b></span>
+    <span><i class="dot dot-t"></i>平分 <b id="legTie">—</b></span>
+    <span><i class="dot dot-l"></i>输 <b id="legLose">—</b></span>
   </div>
+  <div class="eq-explain" id="eqExplain" hidden></div>
 </header>
 
 <main>
   <section class="panel">
-    <div class="phead"><h2>我的手牌<em id="heroNotation"></em></h2><button class="link" data-clear="hero">清空</button></div>
+    <div class="phead"><h2>我的手牌<em id="heroNotation"></em></h2>
+      <div class="acts"><button class="link" id="toggleHero">隐藏</button><button class="link" data-clear="hero">清空</button></div>
+    </div>
     <div class="slots" id="heroSlots"></div>
   </section>
 

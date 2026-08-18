@@ -1,5 +1,5 @@
 /* Service Worker：把全部资源预缓存，飞行模式下也能打开 */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = 'poker-cal-' + VERSION;
 
 const ASSETS = [
