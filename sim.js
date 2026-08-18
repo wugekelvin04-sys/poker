@@ -117,8 +117,9 @@
         n: n, win: win, tie: tieCount, lose: lose,
         winRate: win / n, tieRate: tieCount / n, loseRate: lose / n,
         equity: eq,
-        // 95% 置信区间半宽
-        margin: 1.96 * Math.sqrt(Math.max(eq * (1 - eq), 1e-9) / n),
+        // 95% 置信区间半宽。正态近似在 0 次或全中时会退化成 0，
+        // 这时改用「三倍法则」给出上界 3/n，否则会谎称零误差。
+        margin: Math.max(1.96 * Math.sqrt(Math.max(eq * (1 - eq), 0) / n), 3 / n),
         catCounts: Array.prototype.slice.call(catCounts).map(function (v) { return v / n; }),
         exact: false,
         elapsed: now() - start

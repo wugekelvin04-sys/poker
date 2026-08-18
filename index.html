@@ -34,49 +34,44 @@
 
 <main>
   <section class="panel">
-    <div class="phead"><h2>我的手牌<em id="heroNotation"></em></h2>
-      <div class="acts"><button class="link" id="toggleHero">隐藏</button><button class="link" data-clear="hero">清空</button></div>
+    <div class="phead">
+      <h2>牌<em id="heroNotation"></em><em id="streetName">翻牌前</em></h2>
+      <div class="acts">
+        <button class="link" id="toggleHero">隐藏</button>
+        <button class="link" data-clear="board">清牌面</button>
+        <button class="link" data-clear="all">全清</button>
+      </div>
     </div>
-    <div class="slots" id="heroSlots"></div>
+    <div class="cards" id="cards"></div>
+    <div class="seat-row"><span class="seat-lbl">人数<em>含我</em></span><div class="seg" id="players"></div></div>
   </section>
 
   <section class="panel">
-    <div class="phead"><h2>公共牌<em id="streetName">翻牌前</em></h2><button class="link" data-clear="board">清空</button></div>
-    <div class="slots board" id="boardSlots"></div>
-    <div class="board-legend"><span>翻牌</span><span>转牌</span><span>河牌</span></div>
-  </section>
-
-  <section class="panel">
-    <div class="phead"><h2>玩家人数<em>含我在内</em></h2></div>
-    <div class="seg" id="players"></div>
-  </section>
-
-  <section class="panel">
-    <div class="phead"><h2>当前牌型</h2></div>
+    <div class="phead"><h2>当前牌型</h2><button class="link" id="toggleDist">成牌分布</button></div>
     <div class="made" id="made">—</div>
+    <div class="made-hint" id="madeHint" hidden></div>
     <div class="improve" id="improve"></div>
     <div class="dist" id="dist"></div>
   </section>
 
   <section class="panel">
-    <div class="phead"><h2>底池赔率<em>该跟还是该弃</em></h2></div>
+    <div class="phead"><h2>行动建议<em>该弃、该跟还是该加</em></h2><button class="link" id="clearOdds">清空</button></div>
     <div class="odds-inputs">
       <label>底池<input id="pot" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></label>
       <label>需跟注<input id="call" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></label>
     </div>
-    <p class="hint">底池填对手下注之后的总额，下面按对手的下注尺度自动算出你要跟的钱</p>
+    <p class="hint">底池填对手下注后的总额；需跟注填 0 表示没人下注</p>
     <div class="quick" id="quickBets">
+      <button data-frac="0">没人下</button>
       <button data-frac="0.33">⅓ 池</button>
       <button data-frac="0.5">½ 池</button>
       <button data-frac="0.75">¾ 池</button>
       <button data-frac="1">满池</button>
     </div>
-    <div class="odds-out" id="oddsOut">填入底池和需跟注的金额</div>
+    <div class="odds-out" id="oddsOut">填入底池金额</div>
   </section>
 
-  <footer class="foot">
-    <span id="engineNote">全部计算在本机完成，不联网</span>
-  </footer>
+  <div class="ver"><button id="forceUpdate">版本 <span id="verNum">?</span> · 点这里强制更新</button></div>
 </main>
 
 <div class="sheet-mask" id="sheetMask" hidden></div>

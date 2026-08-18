@@ -24,7 +24,8 @@
     players: 6,
     pot: '',
     call: '',
-    hideHero: false      // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
+    hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
+    showDist: false      // 成牌分布默认收起，一屏放得下
   };
   var active = -1;      // 当前正在选的槽位下标
   var lastResult = null;
@@ -44,6 +45,7 @@
         if (s.players >= 2 && s.players <= 10) state.players = s.players;
         state.pot = s.pot || ''; state.call = s.call || '';
         state.hideHero = !!s.hideHero;
+        state.showDist = !!s.showDist;
       }
     } catch (e) {}
   }
@@ -63,8 +65,8 @@
   function isRed(c) { var s = c & 3; return s === 1 || s === 2; }
 
   function renderSlots() {
-    var hero = $('heroSlots'), board = $('boardSlots');
-    hero.innerHTML = ''; board.innerHTML = '';
+    var box = $('cards');
+    box.innerHTML = '';
     SLOTS.forEach(function (s, k) {
       var el = document.createElement('button');
       el.className = 'slot';
@@ -86,8 +88,14 @@
         if (masked) { state.hideHero = false; save(); renderSlots(); runNow(); }
         else openPicker(k);
       });
-      (s.kind === 'hero' ? hero : board).appendChild(el);
+      box.appendChild(el);
     });
+    // 牌下面那行分区标签，和上面的牌共用同一套网格，严格对齐
+    box.insertAdjacentHTML('beforeend',
+      '<span class="lbl lbl-hero">我的手牌</span>' +
+      '<span class="lbl lbl-flop">翻牌</span>' +
+      '<span class="lbl lbl-turn">转牌</span>' +
+      '<span class="lbl lbl-river">河牌</span>');
 
     // 起手牌记号，如 AKs / AKo / AA
     var note = '';
@@ -311,7 +319,31 @@
     });
   }
 
-  function pct(x, d) { return (x * 100).toFixed(d === undefined ? 1 : d) + '%'; }
+  /* 不指定小数位时自动挑精度：0.02% 不该显示成 0.0%，那看起来像「不可能」。 */
+  function pct(x, d) {
+    if (d !== undefined) return (x * 100).toFixed(d) + '%';
+    var v = x * 100;
+    if (v === 0) return '0%';
+    if (v >= 1) return v.toFixed(1) + '%';
+    if (v >= 0.1) return v.toFixed(2) + '%';
+    if (v >= 0.01) return v.toFixed(3) + '%';
+    return '<0.01%';
+  }
+
+  /* 顶部那个大数字，同上但不带百分号 */
+  function eqNum(x) {
+    var v = x * 100;
+    if (v === 0) return '0';
+    if (v >= 1) return v.toFixed(1);
+    if (v >= 0.1) return v.toFixed(2);
+    if (v >= 0.01) return v.toFixed(3);
+    return '<0.01';
+  }
+
+  function marginStr(m) {
+    var v = m * 100;
+    return v >= 0.1 ? v.toFixed(2) : v >= 0.01 ? v.toFixed(3) : v.toFixed(4);
+  }
 
   function setBar(w, t, l) {
     $('barWin').style.width = (w * 100) + '%';
@@ -320,10 +352,10 @@
   }
 
   function renderResult(r, done) {
-    $('eqValue').textContent = (r.equity * 100).toFixed(1);
+    $('eqValue').textContent = eqNum(r.equity);
     setBar(r.winRate, r.tieRate, r.loseRate);
     $('legWin').textContent = pct(r.winRate);
-    $('legTie').textContent = pct(r.tieRate, r.tieRate < 0.01 ? 2 : 1);
+    $('legTie').textContent = pct(r.tieRate);
     $('legLose').textContent = pct(r.loseRate);
 
     // 胜率含平局分摊，和「独赢」不是一回事，容易被误会成算错了
@@ -340,8 +372,14 @@
       $('eqNote').textContent = '精确枚举 ' + r.n.toLocaleString() + ' 种可能，无误差';
     } else {
       var wan = (r.n / 10000).toFixed(r.n >= 100000 ? 0 : 1);
-      $('eqNote').textContent = '模拟 ' + wan + ' 万次 · 误差 ±' + (r.margin * 100).toFixed(2) + '%'
-        + (done ? '' : ' …');
+      if (r.win === 0 && r.tie === 0) {
+        // 一次都没赢时报「±0」是骗人的，改成给出真实胜率的上界
+        $('eqNote').textContent = '模拟 ' + wan + ' 万次一次没赢 · 真实胜率不超过 '
+          + marginStr(r.margin) + '%' + (done ? '' : ' …');
+      } else {
+        $('eqNote').textContent = '模拟 ' + wan + ' 万次 · 误差 ±' + marginStr(r.margin) + '%'
+          + (done ? '' : ' …');
+      }
     }
     renderDist(r);
     renderOdds();
@@ -351,15 +389,29 @@
   function renderMadeHand(hero, board) {
     var el = $('made');
     el.classList.remove('hidden-hand');
-    if (hero.length < 2) { el.textContent = '—'; return; }
+    if (hero.length < 2) { el.textContent = '—'; $('madeHint').hidden = true; return; }
     var score = E.evalHand(hero.concat(board));
     el.dataset.cat = score >>> 20;
     if (state.hideHero) {
       // 牌型会直接暴露手牌，一并遮住
       el.textContent = '已隐藏（点手牌显示）';
       el.classList.add('hidden-hand');
-    } else {
-      el.textContent = E.describe(score);
+      $('madeHint').hidden = true;
+      return;
+    }
+    el.textContent = E.describe(score);
+
+    // 牌型完全由公共牌凑成时，桌上每个人都有这副牌，你拼的只是踢脚。
+    // 这种局面人一多胜率会塌得很快，值得单独提醒。
+    var hint = $('madeHint');
+    hint.hidden = true;
+    if (board.length >= 3) {
+      var bs = E.evalHand(board);
+      if ((bs >>> 20) >= 1 && (bs >>> 20) === (score >>> 20)) {
+        hint.hidden = false;
+        hint.textContent = '公共牌本身就是' + E.describe(bs)
+          + '，桌上每个人都有，你比的只是踢脚';
+      }
     }
   }
 
@@ -372,9 +424,11 @@
     if (boardN >= 5) {
       // 河牌已发完，不存在“还能成什么牌”
       box.innerHTML = '';
+      $('toggleDist').hidden = true;
       $('improve').textContent = '牌已发完，这就是最终牌型';
       return;
     }
+    $('toggleDist').hidden = false;
     if (state.hideHero) {
       $('improve').textContent = '';
     } else {
@@ -382,6 +436,9 @@
       for (var c = curCat + 1; c <= 8; c++) improve += r.catCounts[c];
       $('improve').innerHTML = '河牌发完后牌型变大的概率 <b>' + pct(improve) + '</b>';
     }
+
+    $('toggleDist').textContent = state.showDist ? '收起' : '成牌分布';
+    if (!state.showDist) { box.innerHTML = ''; return; }
 
     var max = Math.max.apply(null, r.catCounts);
     var html = '';
@@ -399,25 +456,65 @@
   // ---------- 底池赔率 ----------
   function num(v) { var x = parseFloat(v); return isFinite(x) && x > 0 ? x : 0; }
 
+  /* 筹码金额取整：大额不带小数，小额留一位 */
+  function chips(x) {
+    return x >= 20 ? String(Math.round(x)) : String(Math.round(x * 10) / 10);
+  }
+
   function renderOdds() {
     var out = $('oddsOut');
     var pot = num(state.pot), call = num(state.call);
-    if (!call) { out.textContent = '填入底池和需跟注的金额'; return; }
-    var required = call / (pot + call);
-    if (!lastResult) {
-      out.innerHTML = '需要至少 <b>' + pct(required) + '</b> 的胜率才值得跟注';
+
+    if (!pot) { out.textContent = '填入底池金额'; return; }
+    if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
+
+    var eq = lastResult.equity;
+    var fair = 1 / state.players;          // 均分时每人应得的份额
+    var html;
+
+    if (call <= 0) {
+      // ---- 没人下注：过牌还是下注，下多少 ----
+      var ratio = eq / fair;
+      if (ratio >= 2) {
+        var b1 = pot * 0.75;
+        html = '<span class="verdict good">下注 ' + chips(b1) + '</span>'
+          + '牌力明显领先：你的胜率 <b>' + pct(eq) + '</b>，' + state.players
+          + ' 人桌的公平份额只有 <b>' + pct(fair) + '</b>。<br>'
+          + '下 ¾ 池（<b>' + chips(b1) + '</b>）要价值。';
+      } else if (ratio >= 1.3) {
+        var b2 = pot * 0.5;
+        html = '<span class="verdict good">下注 ' + chips(b2) + '</span>'
+          + '小幅领先：胜率 <b>' + pct(eq) + '</b> 高于公平份额 <b>' + pct(fair) + '</b>。<br>'
+          + '下 ½ 池（<b>' + chips(b2) + '</b>）薄价值，别下太大。';
+      } else {
+        html = '<span class="verdict even">过牌</span>'
+          + '胜率 <b>' + pct(eq) + '</b> 没到 ' + state.players + ' 人桌的公平份额 <b>'
+          + pct(fair) + '</b>，先别主动投钱。';
+      }
+      out.innerHTML = html;
       return;
     }
-    var eq = lastResult.equity;
-    var ev = eq * (pot + call) - call;
+
+    // ---- 有人下注：弃、跟，还是加 ----
+    var required = call / (pot + call);          // 跟注所需的最低胜率
+    var ev = eq * (pot + call) - call;           // 跟注的期望收益
     var edge = eq - required;
-    var cls = edge > 0.02 ? 'good' : edge < -0.02 ? 'bad' : 'even';
-    var verdict = edge > 0.02 ? '跟注 ✓' : edge < -0.02 ? '弃牌 ✕' : '临界，看位置和后续行动';
-    out.innerHTML =
-      '<span class="verdict ' + cls + '">' + verdict + '</span>'
-      + '需要胜率 <b>' + pct(required) + '</b>，你有 <b>' + pct(eq) + '</b>'
+    var raiseTo = call + 0.7 * (pot + call);     // 跟平后再按约 ⅔ 池加
+
+    var verdict, cls;
+    if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
+    else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; }
+    else if (eq >= 1.6 * fair && edge >= 0.15) { verdict = '加注到 ' + chips(raiseTo); cls = 'good'; }
+    else { verdict = '跟注 ' + chips(call); cls = 'good'; }
+
+    html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
+      + '跟注需要 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
-      + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '') + ev.toFixed(1) + '</b>';
+      + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
+    if (cls === 'good' && verdict.indexOf('加注') === 0) {
+      html += '<br>优势够大，值得加注施压：跟平后按约 ⅔ 池加到 <b>' + chips(raiseTo) + '</b>。';
+    }
+    out.innerHTML = html;
   }
 
   // ---------- 事件绑定 ----------
@@ -425,6 +522,12 @@
     $('deck').addEventListener('click', function (e) {
       var b = e.target.closest('.pick');
       if (b) pickCard(parseInt(b.dataset.card, 10));
+    });
+    $('toggleDist').addEventListener('click', function () {
+      state.showDist = !state.showDist;
+      save();
+      if (lastResult) renderDist(lastResult);
+      else $('toggleDist').textContent = state.showDist ? '收起' : '成牌分布';
     });
     $('toggleHero').addEventListener('click', function () {
       state.hideHero = !state.hideHero;
@@ -438,26 +541,38 @@
 
     document.querySelectorAll('[data-clear]').forEach(function (b) {
       b.addEventListener('click', function () {
-        if (b.dataset.clear === 'hero') state.hero = [null, null];
-        else state.board = [null, null, null, null, null];
+        var what = b.dataset.clear;
+        if (what === 'hero' || what === 'all') state.hero = [null, null];
+        if (what === 'board' || what === 'all') state.board = [null, null, null, null, null];
         save(); renderSlots(); compute();
       });
     });
 
     ['pot', 'call'].forEach(function (k) {
-      $(k).value = state[k];
-      $(k).addEventListener('input', function () {
-        state[k] = $(k).value; save(); renderOdds();
+      var el = $(k);
+      el.value = state[k];
+      el.addEventListener('input', function () {
+        state[k] = el.value; save(); renderOdds();
       });
+      // 点进来光标会落在数字中间，很难改。直接全选，打字即覆盖。
+      el.addEventListener('focus', function () {
+        setTimeout(function () { try { el.select(); } catch (e) {} }, 0);
+      });
+    });
+    $('clearOdds').addEventListener('click', function () {
+      state.pot = ''; state.call = '';
+      $('pot').value = ''; $('call').value = '';
+      save(); renderOdds();
     });
     $('quickBets').addEventListener('click', function (e) {
       var b = e.target.closest('button');
       if (!b) return;
       var pot = num(state.pot);
+      var f = parseFloat(b.dataset.frac);
+      if (f === 0) { state.call = '0'; $('call').value = '0'; save(); renderOdds(); return; }
       if (!pot) { $('pot').focus(); return; }
       // 底池字段填的是对手下注之后的总额 P' = P + f·P。
       // 所以我要跟的金额 = f·P = P' · f/(1+f)。不改底池，重复点击不会累加。
-      var f = parseFloat(b.dataset.frac);
       state.call = String(Math.round(pot * f / (1 + f) * 10) / 10);
       $('call').value = state.call;
       save(); renderOdds();
@@ -471,9 +586,51 @@
   bind();
   compute();
 
+  // ---------- 自动更新 ----------
+  // 主屏 App 没有地址栏也没有刷新按钮，必须自己处理更新，
+  // 否则用户永远停在旧版本上。
+  var APP_VERSION = 'v6';
+  $('verNum').textContent = APP_VERSION;
+
   if ('serviceWorker' in navigator) {
+    var hadController = !!navigator.serviceWorker.controller;
+    var reloading = false;
+
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      // 首次安装也会触发，那次不算更新，别刷
+      if (!hadController || reloading) return;
+      reloading = true;
+      location.reload();
+    });
+
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js').catch(function () {});
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        // 每次回到前台都查一下有没有新版本
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) reg.update();
+        });
+        window.addEventListener('focus', function () { reg.update(); });
+      }).catch(function () {});
     });
   }
+
+  // 兜底：万一自动更新没生效，点一下清干净重来
+  $('forceUpdate').addEventListener('click', function () {
+    var btn = $('forceUpdate');
+    btn.textContent = '正在更新…';
+    var jobs = [];
+    if ('serviceWorker' in navigator) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+        return Promise.all(rs.map(function (r) { return r.unregister(); }));
+      }));
+    }
+    if (window.caches) {
+      jobs.push(caches.keys().then(function (ks) {
+        return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+      }));
+    }
+    Promise.all(jobs)['catch'](function () {}).then(function () {
+      location.replace(location.pathname + '?u=' + Date.now());
+    });
+  });
 })();
