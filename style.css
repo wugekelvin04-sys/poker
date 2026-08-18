@@ -176,6 +176,8 @@ main{padding:10px 12px calc(var(--safe-b) + 14px);display:flex;flex-direction:co
 }
 
 .hint{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.4}
+.hint b{color:var(--muted);font-weight:600}
+#bettors{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
 
 .ver{text-align:center;padding:2px 0 0}
 .ver button{font-size:10px;color:#454e5e;padding:2px 8px}

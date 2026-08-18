@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v8';
+  var APP_VERSION = 'v9';
 
   var state = {
     hero: [null, null],
@@ -26,6 +26,7 @@
     players: 6,
     pot: '',
     call: '',
+    bettors: 1,          // 我前面已经投了这个跟注额的人数
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
   };
@@ -48,6 +49,7 @@
         state.pot = s.pot || ''; state.call = s.call || '';
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
+        if (s.bettors >= 0 && s.bettors <= 9) state.bettors = s.bettors;
       }
     } catch (e) {}
   }
@@ -125,10 +127,29 @@
         b.textContent = p;
         if (p === state.players) b.className = 'on';
         b.addEventListener('click', function () {
-          state.players = p; renderPlayers(); save(); compute();
+          state.players = p; renderPlayers(); renderBettors(); save(); compute();
         });
         box.appendChild(b);
       })(p);
+    }
+  }
+
+  /* 前面下注人数：最多到「我之外的人数」，超过没有意义 */
+  function renderBettors() {
+    var box = $('bettors');
+    var maxN = state.players - 1;
+    if (state.bettors > maxN) state.bettors = maxN;
+    box.innerHTML = '';
+    for (var n = 0; n <= maxN; n++) {
+      (function (n) {
+        var b = document.createElement('button');
+        b.textContent = n;
+        if (n === state.bettors) b.className = 'on';
+        b.addEventListener('click', function () {
+          state.bettors = n; renderBettors(); save(); renderOdds();
+        });
+        box.appendChild(b);
+      })(n);
     }
   }
 
@@ -465,70 +486,72 @@
 
   function renderOdds() {
     var out = $('oddsOut');
-    var pot = num(state.pot), call = num(state.call);
-
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
+
+    var potBefore = num(state.pot);        // 他们这轮下注之前池子里的钱
+    var call = num(state.call);            // 我要跟的额度
+    var bettors = state.bettors;           // 前面已经投了这个额度的人数
+    var potNow = potBefore + call * bettors;   // 我行动时的实际底池
 
     var eq = lastResult.equity;
     var fair = 1 / state.players;          // 均分时每人应得的份额
     var ratio = eq / fair;
-    var html;
 
-    // 底池填 0：第一轮，还没人往池里放钱。
-    // 没有底池就算不出赔率，也给不出具体筹码数，只能按牌力强弱定性判断。
-    if (pot <= 0) {
-      if (call > 0) {
-        out.innerHTML = '<span class="verdict even">底池对不上</span>'
-          + '有人下注，底池就不可能是 0。底池请填<b>对手下注之后</b>的总额。';
+    // ---- 没人下注 ----
+    if (call <= 0) {
+      if (potNow <= 0) {
+        // 第一轮，池子还是空的：没有底池就算不出赔率，只能定性判断
+        var v0, c0, d0;
+        if (ratio >= 1.6) {
+          v0 = '值得进攻'; c0 = 'good';
+          d0 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌的公平份额 <b>'
+            + pct(fair) + '</b>，主动下注建池。';
+        } else if (ratio >= 1.15) {
+          v0 = '可以入池'; c0 = 'good';
+          d0 = '胜率 <b>' + pct(eq) + '</b> 略高于公平份额 <b>' + pct(fair) + '</b>，值得看一手，别投太多。';
+        } else if (ratio >= 0.85) {
+          v0 = '边缘'; c0 = 'even';
+          d0 = '胜率 <b>' + pct(eq) + '</b> 和公平份额 <b>' + pct(fair) + '</b> 差不多，看位置决定。';
+        } else {
+          v0 = '弃牌 ✕'; c0 = 'bad';
+          d0 = '胜率 <b>' + pct(eq) + '</b> 明显不到公平份额 <b>' + pct(fair) + '</b>，这手不值得投钱。';
+        }
+        out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>' + d0
+          + '<br>填上底池金额，就能给出该下多少筹码。';
         return;
       }
-      var v0, c0, d0;
-      if (ratio >= 1.6) {
-        v0 = '值得进攻'; c0 = 'good';
-        d0 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌的公平份额 <b>'
-          + pct(fair) + '</b>，主动下注建池。';
-      } else if (ratio >= 1.15) {
-        v0 = '可以入池'; c0 = 'good';
-        d0 = '胜率 <b>' + pct(eq) + '</b> 略高于公平份额 <b>' + pct(fair) + '</b>，值得看一手，别投太多。';
-      } else if (ratio >= 0.85) {
-        v0 = '边缘'; c0 = 'even';
-        d0 = '胜率 <b>' + pct(eq) + '</b> 和公平份额 <b>' + pct(fair) + '</b> 差不多，看位置决定。';
-      } else {
-        v0 = '弃牌 ✕'; c0 = 'bad';
-        d0 = '胜率 <b>' + pct(eq) + '</b> 明显不到公平份额 <b>' + pct(fair) + '</b>，这手不值得投钱。';
-      }
-      out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>' + d0
-        + '<br>填上底池金额，就能给出该下多少筹码。';
-      return;
-    }
-
-    if (call <= 0) {
-      // ---- 底池里有钱但没人下注：过牌还是下注，下多少 ----
+      var bet, verdict1, cls1, why1;
       if (ratio >= 2) {
-        var b1 = pot * 0.75;
-        html = '<span class="verdict good">下注 ' + chips(b1) + '</span>'
-          + '牌力明显领先：你的胜率 <b>' + pct(eq) + '</b>，' + state.players
-          + ' 人桌的公平份额只有 <b>' + pct(fair) + '</b>。<br>'
-          + '下 ¾ 池（<b>' + chips(b1) + '</b>）要价值。';
+        bet = potNow * 0.75;
+        verdict1 = '下注 ' + chips(bet); cls1 = 'good';
+        why1 = '牌力明显领先：胜率 <b>' + pct(eq) + '</b>，' + state.players
+          + ' 人桌的公平份额只有 <b>' + pct(fair) + '</b>。下 ¾ 池要价值。';
       } else if (ratio >= 1.3) {
-        var b2 = pot * 0.5;
-        html = '<span class="verdict good">下注 ' + chips(b2) + '</span>'
-          + '小幅领先：胜率 <b>' + pct(eq) + '</b> 高于公平份额 <b>' + pct(fair) + '</b>。<br>'
-          + '下 ½ 池（<b>' + chips(b2) + '</b>）薄价值，别下太大。';
+        bet = potNow * 0.5;
+        verdict1 = '下注 ' + chips(bet); cls1 = 'good';
+        why1 = '小幅领先：胜率 <b>' + pct(eq) + '</b> 高于公平份额 <b>' + pct(fair)
+          + '</b>。下 ½ 池薄价值，别下太大。';
       } else {
-        html = '<span class="verdict even">过牌</span>'
-          + '胜率 <b>' + pct(eq) + '</b> 没到 ' + state.players + ' 人桌的公平份额 <b>'
+        verdict1 = '过牌'; cls1 = 'even';
+        why1 = '胜率 <b>' + pct(eq) + '</b> 没到 ' + state.players + ' 人桌的公平份额 <b>'
           + pct(fair) + '</b>，先别主动投钱。';
       }
-      out.innerHTML = html;
+      out.innerHTML = '<span class="verdict ' + cls1 + '">' + verdict1 + '</span>' + why1
+        + '<br>当前底池 <b>' + chips(potNow) + '</b>。';
       return;
     }
 
-    // ---- 有人下注：弃、跟，还是加 ----
-    var required = call / (pot + call);          // 跟注所需的最低胜率
-    var ev = eq * (pot + call) - call;           // 跟注的期望收益
+    // ---- 有人下注 ----
+    if (bettors <= 0) {
+      out.innerHTML = '<span class="verdict even">还差一步</span>'
+        + '既然要跟注，前面至少有一个人下了注。选一下<b>前面几人下注</b>，我才能算出底池。';
+      return;
+    }
+
+    var required = call / (potNow + call);       // 跟注所需的最低胜率
+    var ev = eq * (potNow + call) - call;        // 跟注的期望收益
     var edge = eq - required;
-    var raiseTo = call + 0.7 * (pot + call);     // 跟平后再按约 ⅔ 池加
+    var raiseTo = call + 0.7 * (potNow + call);  // 跟平后再按约 ⅔ 池加
 
     var verdict, cls;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
@@ -536,8 +559,12 @@
     else if (eq >= 1.6 * fair && edge >= 0.15) { verdict = '加注到 ' + chips(raiseTo); cls = 'good'; }
     else { verdict = '跟注 ' + chips(call); cls = 'good'; }
 
-    html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
-      + '跟注需要 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
+    var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
+      + '底池 <b>' + chips(potNow) + '</b>'
+      + (bettors > 0 && call > 0
+          ? '（原 ' + chips(potBefore) + ' + ' + bettors + ' 人 × ' + chips(call) + '）'
+          : '')
+      + '，跟注需要 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
       + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
     if (cls === 'good' && verdict.indexOf('加注') === 0) {
@@ -589,9 +616,9 @@
       });
     });
     $('clearOdds').addEventListener('click', function () {
-      state.pot = ''; state.call = '';
+      state.pot = ''; state.call = ''; state.bettors = 1;
       $('pot').value = ''; $('call').value = '';
-      save(); renderOdds();
+      renderBettors(); save(); renderOdds();
     });
     $('quickBets').addEventListener('click', function (e) {
       var b = e.target.closest('button');
@@ -600,11 +627,11 @@
       var f = parseFloat(b.dataset.frac);
       if (f === 0) { state.call = '0'; $('call').value = '0'; save(); renderOdds(); return; }
       if (!pot) { $('pot').focus(); return; }
-      // 底池字段填的是对手下注之后的总额 P' = P + f·P。
-      // 所以我要跟的金额 = f·P = P' · f/(1+f)。不改底池，重复点击不会累加。
-      state.call = String(Math.round(pot * f / (1 + f) * 10) / 10);
+      // 底池填的是下注之前的数额，所以尺度直接乘即可，无需折算
+      state.call = String(Math.round(pot * f * 10) / 10);
+      if (state.bettors < 1) state.bettors = 1;
       $('call').value = state.call;
-      save(); renderOdds();
+      renderBettors(); save(); renderOdds();
     });
   }
 
@@ -613,6 +640,7 @@
     load();
     renderSlots();
     renderPlayers();
+    renderBettors();
     bind();
     compute();
     window.__APP_OK = true;   // 页面里的自愈脚本靠这个判断有没有起来
