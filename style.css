@@ -1,0 +1,155 @@
+:root{
+  --bg:#0b0e13; --panel:#151a22; --panel-2:#1b212b; --line:#252d3a;
+  --txt:#e9edf3; --muted:#8a94a6; --dim:#5d6779;
+  --win:#32d74b; --tie:#ff9f0a; --lose:#ff453a; --accent:#0a84ff;
+  --card-bg:#f6f7f9; --card-black:#141a22; --card-red:#d22a35;
+  --r:14px;
+  --safe-t:env(safe-area-inset-top); --safe-b:env(safe-area-inset-bottom);
+  --safe-l:env(safe-area-inset-left); --safe-r:env(safe-area-inset-right);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--txt);
+  font:400 16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Helvetica Neue",sans-serif;
+  -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+  overscroll-behavior-y:none;
+  padding-left:var(--safe-l); padding-right:var(--safe-r);
+}
+button,input{font:inherit;color:inherit;background:none;border:0}
+button{cursor:pointer;-webkit-user-select:none;user-select:none}
+h2{font-size:14px;font-weight:600;letter-spacing:.02em;color:var(--muted)}
+h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:8px;font-size:12px}
+
+/* ---------- 结果区（吸顶） ---------- */
+.result{
+  position:sticky; top:0; z-index:20;
+  padding:calc(var(--safe-t) + 14px) 18px 14px;
+  background:rgba(11,14,19,.86);
+  -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid var(--line);
+}
+.eq-label{font-size:12px;color:var(--dim);letter-spacing:.08em}
+.eq-main{display:flex;align-items:baseline;gap:2px;margin:-2px 0 2px}
+#eqValue{
+  font-size:56px;line-height:1.05;font-weight:700;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
+  transition:color .25s;
+}
+.eq-unit{font-size:22px;font-weight:600;color:var(--muted)}
+.eq-note{font-size:12px;color:var(--dim);min-height:17px;font-variant-numeric:tabular-nums}
+.bar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--panel-2);margin:10px 0 8px}
+.bar span{transition:width .25s ease}
+.seg-w{background:var(--win)} .seg-t{background:var(--tie)} .seg-l{background:var(--lose)}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--muted)}
+.legend b{font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.dot-w{background:var(--win)} .dot-t{background:var(--tie)} .dot-l{background:var(--lose)}
+
+/* ---------- 面板 ---------- */
+main{padding:14px 14px calc(var(--safe-b) + 28px);display:flex;flex-direction:column;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.link{color:var(--accent);font-size:13px;padding:4px 2px}
+.link:active{opacity:.5}
+
+/* ---------- 卡槽 ---------- */
+.slots{display:flex;gap:8px}
+.slots.board{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.slot{
+  flex:1; aspect-ratio:5/7; border-radius:9px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--panel-2); border:1.5px dashed #303948; color:var(--dim);
+  font-size:22px; transition:transform .1s, box-shadow .15s;
+}
+.slot:active{transform:scale(.95)}
+.slot.filled{background:var(--card-bg);border:1px solid #cdd3dc;color:var(--card-black)}
+.slot.filled.red{color:var(--card-red)}
+.slot.active{box-shadow:0 0 0 2.5px var(--accent)}
+.slot .r{font-size:26px;font-weight:650;line-height:1;letter-spacing:-.02em}
+.slot .s{font-size:17px;line-height:1.2;margin-top:1px}
+.slots:not(.board) .slot{max-width:26%}
+/* 与卡槽共用同一套 5 列网格，标签才能严格对齐到对应的牌 */
+.board-legend{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:7px;
+  font-size:11px;color:var(--dim);text-align:center}
+.board-legend span:nth-child(1){grid-column:1/4}
+
+/* ---------- 人数分段 ---------- */
+.seg{display:grid;grid-template-columns:repeat(9,1fr);gap:5px}
+.seg button{
+  padding:11px 0;border-radius:9px;background:var(--panel-2);
+  font-size:15px;font-variant-numeric:tabular-nums;color:var(--muted);transition:transform .1s;
+}
+.seg button:active{transform:scale(.92)}
+.seg button.on{background:var(--accent);color:#fff;font-weight:600}
+
+/* ---------- 牌型 / 分布 ---------- */
+.made{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.improve{font-size:12px;color:var(--muted);margin-top:3px;min-height:17px}
+.improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
+.dist{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.dist-row{display:grid;grid-template-columns:62px 1fr 50px;align-items:center;gap:9px;font-size:12px}
+.dist-row .nm{color:var(--muted)}
+.dist-row .tr{display:block;height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+/* 必须是块级，行内元素的 height 不生效 */
+.dist-row .fl{display:block;height:100%;min-width:2px;background:var(--accent);border-radius:3px;transition:width .3s}
+.dist-row.cur .fl{background:var(--win)}
+.dist-row.cur .nm{color:var(--txt)}
+.dist-row .vl{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* ---------- 底池赔率 ---------- */
+.odds-inputs{display:flex;gap:10px}
+.odds-inputs label{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px;
+  background:var(--panel-2);border-radius:10px;padding:0 12px;font-size:12px;color:var(--muted)}
+.odds-inputs input{
+  flex:1;min-width:0;padding:11px 0;font-size:17px;font-weight:600;text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.odds-inputs input::placeholder{color:var(--dim);font-weight:400}
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.quick button{padding:8px 0;border-radius:8px;background:var(--panel-2);font-size:12px;color:var(--muted)}
+.quick button:active{transform:scale(.94)}
+.odds-out{margin-top:12px;font-size:13px;color:var(--muted);line-height:1.7}
+.odds-out .verdict{display:block;font-size:17px;font-weight:650;margin-bottom:4px}
+.odds-out .good{color:var(--win)} .odds-out .bad{color:var(--lose)} .odds-out .even{color:var(--tie)}
+.odds-out b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
+
+.foot{text-align:center;font-size:11px;color:var(--dim);padding:6px 0 0}
+
+/* ---------- 选牌抽屉 ---------- */
+.sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:30;animation:fade .2s}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:31;
+  background:#12171f;border-top:1px solid var(--line);
+  border-radius:18px 18px 0 0;
+  padding:12px 12px calc(var(--safe-b) + 12px);
+  padding-left:calc(var(--safe-l) + 12px); padding-right:calc(var(--safe-r) + 12px);
+  box-shadow:0 -12px 40px rgba(0,0,0,.5);
+  animation:up .22s cubic-bezier(.22,.9,.3,1);
+}
+@keyframes up{from{transform:translateY(102%)}to{transform:translateY(0)}}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 10px;font-size:14px;color:var(--muted)}
+.sheet-head .link{font-size:15px;margin-left:16px}
+#sheetRemove{color:var(--lose)}
+.deck{display:flex;flex-direction:column;gap:5px}
+.deck-row{display:grid;grid-template-columns:repeat(13,1fr);gap:4px}
+.pick{
+  background:var(--card-bg);color:var(--card-black);
+  border-radius:7px;padding:9px 0 8px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  line-height:1;transition:transform .08s;
+}
+.pick .r{font-size:15px;font-weight:650;letter-spacing:-.03em}
+.pick .s{font-size:10px;margin-top:3px;opacity:.8}
+.pick.red{color:var(--card-red)}
+.pick:active{transform:scale(.88)}
+.pick.used{opacity:.16;pointer-events:none}
+
+@media (min-width:520px){
+  main{max-width:520px;margin:0 auto}
+  .result{max-width:520px;margin:0 auto}
+  .sheet{max-width:520px;margin:0 auto;border-radius:18px 18px 0 0}
+}
+
+.hint{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}

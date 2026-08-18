@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#1d2534"/><stop offset="100%" stop-color="#0b0e13"/>
+    </radialGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="translate(256 256) scale(1) translate(-256 -256)" filter="url(#sh)">
+    
+    <g transform="rotate(-15 256 256) translate(-46 0)">
+      <rect x="178" y="146" width="156" height="220" rx="19" fill="#f7f8fa"
+            stroke="#c9d0da" stroke-width="2"/>
+      <text x="196" y="196" font-family="Helvetica Neue,Helvetica,Arial" font-size="52"
+            font-weight="700" fill="#d22a35">A</text>
+      <text x="256" y="300" font-family="Helvetica Neue,Helvetica,Arial" font-size="112"
+            text-anchor="middle" fill="#d22a35">♥</text>
+    </g>
+    
+    <g transform="rotate(11 256 256) translate(40 0)">
+      <rect x="178" y="146" width="156" height="220" rx="19" fill="#f7f8fa"
+            stroke="#c9d0da" stroke-width="2"/>
+      <text x="196" y="196" font-family="Helvetica Neue,Helvetica,Arial" font-size="52"
+            font-weight="700" fill="#141a22">A</text>
+      <text x="256" y="300" font-family="Helvetica Neue,Helvetica,Arial" font-size="112"
+            text-anchor="middle" fill="#141a22">♠</text>
+    </g>
+  </g>
+</svg>
