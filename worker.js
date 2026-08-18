@@ -1,5 +1,8 @@
 /* 计算线程：主线程只管界面，模拟全在这里跑 */
-importScripts('engine.js', 'sim.js');
+// 版本由主线程通过 worker.js?v=xx 传进来，保证和页面用的是同一份引擎
+var V = (self.location.search.match(/v=([^&]+)/) || [])[1];
+var q = V ? '?v=' + V : '';
+importScripts('engine.js' + q, 'sim.js' + q);
 
 self.onmessage = function (e) {
   var msg = e.data;

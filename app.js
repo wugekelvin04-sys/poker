@@ -18,6 +18,8 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
+  var APP_VERSION = 'v7';
+
   var state = {
     hero: [null, null],
     board: [null, null, null, null, null],
@@ -288,7 +290,7 @@
     var id = runId;
 
     try {
-      worker = new Worker('worker.js');
+      worker = new Worker('worker.js?v=' + APP_VERSION);
     } catch (err) {
       // 某些浏览器或隐私设置下根本创建不了 Worker
       runOnMainThread(hero, board, id);
@@ -580,16 +582,21 @@
   }
 
   // ---------- 启动 ----------
-  load();
-  renderSlots();
-  renderPlayers();
-  bind();
-  compute();
+  try {
+    load();
+    renderSlots();
+    renderPlayers();
+    bind();
+    compute();
+    window.__APP_OK = true;   // 页面里的自愈脚本靠这个判断有没有起来
+  } catch (err) {
+    // 起不来通常是缓存里新旧版本对不上，交给自愈脚本清缓存重来
+    if (window.console) console.error('初始化失败', err);
+  }
 
   // ---------- 自动更新 ----------
   // 主屏 App 没有地址栏也没有刷新按钮，必须自己处理更新，
   // 否则用户永远停在旧版本上。
-  var APP_VERSION = 'v6';
   $('verNum').textContent = APP_VERSION;
 
   if ('serviceWorker' in navigator) {

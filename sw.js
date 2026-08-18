@@ -1,16 +1,18 @@
 /* Service Worker：把全部资源预缓存，飞行模式下也能打开 */
-const VERSION = 'v6';
+const VERSION = 'v7';
 const CACHE = 'poker-cal-' + VERSION;
 
+// 子资源都带 ?v=VERSION，和 index.html 里的引用完全一致。
+// 这样换版本时 URL 就变了，绝不会出现新 HTML 配旧 JS 的情况。
 const ASSETS = [
   './',
   'index.html',
-  'style.css',
-  'app.js',
-  'engine.js',
-  'sim.js',
-  'worker.js',
-  'manifest.webmanifest',
+  'style.css?v=' + VERSION,
+  'app.js?v=' + VERSION,
+  'engine.js?v=' + VERSION,
+  'sim.js?v=' + VERSION,
+  'manifest.webmanifest?v=' + VERSION,
+  'worker.js?v=' + VERSION,
   'icons/icon-180.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -35,26 +37,36 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
 
+  // 页面本身走网络优先：联网时永远拿到最新的 HTML，它引用的
+  // ?v=新版本 资源自然也是新的；断网才回落到缓存。
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('index.html', copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match('index.html').then((hit) => hit || caches.match('./')))
+    );
+    return;
+  }
+
+  // 子资源缓存优先，但必须按完整 URL（含查询串）匹配。
+  // 这里如果 ignoreSearch，app.js?v=v7 会命中旧的 app.js?v=v6，
+  // 就会出现新 HTML 配旧 JS 的错配。
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => {
-      if (hit) {
-        // 后台顺手更新一份，下次打开就是新的
-        fetch(req).then((res) => {
-          if (res && res.ok) caches.open(CACHE).then((c) => c.put(req, res.clone()));
-        }).catch(() => {});
-        return hit;
-      }
+    caches.match(req).then((hit) => {
+      if (hit) return hit;
       return fetch(req).then((res) => {
         if (res && res.ok && new URL(req.url).origin === location.origin) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(req, copy));
         }
         return res;
-      }).catch(() => {
-        // 离线且没缓存：页面导航一律回落到首页
-        if (req.mode === 'navigate') return caches.match('index.html');
-        return new Response('', { status: 504, statusText: 'offline' });
-      });
+      }).catch(() => new Response('', { status: 504, statusText: 'offline' }));
     })
   );
 });

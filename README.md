@@ -58,7 +58,15 @@ open http://localhost:8777/
 node tools/make-icons.mjs        # 重新生成图标（需要本机装了 Chrome）
 ```
 
-改了文件之后记得把 `sw.js` 里的 `VERSION` 加一，否则用户端会一直吃旧缓存。
+改了文件之后**必须**统一升版本号：
+
+```bash
+node tools/set-version.mjs v8
+```
+
+它会同时改掉 `index.html` 里所有资源的 `?v=` 查询串、`sw.js` 的缓存名和 `app.js` 的显示版本。三者必须完全一致——否则会出现「新 HTML 配旧 JS」，页面直接白掉。
+
+缓存策略也是围绕这点设计的：页面本身走**网络优先**（联网必拿最新 HTML，断网回落缓存），子资源走缓存优先但**按完整 URL 匹配**（不能 `ignoreSearch`，否则 `app.js?v=v8` 会命中旧的 `app.js?v=v7`）。另外 `index.html` 末尾有一段自愈脚本：若 1.8 秒内 `window.__APP_OK` 没被置上，说明初始化失败，会自动清缓存并重载一次。
 
 ## 文件
 

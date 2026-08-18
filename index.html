@@ -10,10 +10,10 @@
 <meta name="apple-mobile-web-app-title" content="胜率">
 <meta name="theme-color" content="#0b0e13">
 <meta name="color-scheme" content="dark">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest?v=v7">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=v7">
 </head>
 <body>
 
@@ -86,8 +86,31 @@
   <div class="deck" id="deck"></div>
 </section>
 
-<script src="engine.js"></script>
-<script src="sim.js"></script>
-<script src="app.js"></script>
+<script src="engine.js?v=v7"></script>
+<script src="sim.js?v=v7"></script>
+<script src="app.js?v=v7"></script>
+<script>
+/* 自愈：万一缓存里 HTML 和 JS 版本对不上导致初始化失败，
+   自动清掉缓存重新加载一次，避免用户面对一个死掉的界面。
+   带上 heal 参数只自愈一次，防止死循环。 */
+(function () {
+  setTimeout(function () {
+    if (window.__APP_OK || location.search.indexOf('heal=') >= 0) return;
+    var reload = function () { location.replace(location.pathname + '?heal=' + Date.now()); };
+    var jobs = [];
+    if ('serviceWorker' in navigator) {
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+        return Promise.all(rs.map(function (r) { return r.unregister(); }));
+      }));
+    }
+    if (window.caches) {
+      jobs.push(caches.keys().then(function (ks) {
+        return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+      }));
+    }
+    Promise.all(jobs).then(reload, reload);
+  }, 1800);
+})();
+</script>
 </body>
 </html>
