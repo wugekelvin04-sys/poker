@@ -10,10 +10,10 @@
 <meta name="apple-mobile-web-app-title" content="胜率">
 <meta name="theme-color" content="#0b0e13">
 <meta name="color-scheme" content="dark">
-<link rel="manifest" href="manifest.webmanifest?v=v7">
+<link rel="manifest" href="manifest.webmanifest?v=v8">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v7">
+<link rel="stylesheet" href="style.css?v=v8">
 </head>
 <body>
 
@@ -60,7 +60,7 @@
       <label>底池<input id="pot" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></label>
       <label>需跟注<input id="call" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></label>
     </div>
-    <p class="hint">底池填对手下注后的总额；需跟注填 0 表示没人下注</p>
+    <p class="hint">底池填 0 = 第一轮还没下注；需跟注填 0 = 没人下注，轮到你先说话</p>
     <div class="quick" id="quickBets">
       <button data-frac="0">没人下</button>
       <button data-frac="0.33">⅓ 池</button>
@@ -86,9 +86,9 @@
   <div class="deck" id="deck"></div>
 </section>
 
-<script src="engine.js?v=v7"></script>
-<script src="sim.js?v=v7"></script>
-<script src="app.js?v=v7"></script>
+<script src="engine.js?v=v8"></script>
+<script src="sim.js?v=v8"></script>
+<script src="app.js?v=v8"></script>
 <script>
 /* 自愈：万一缓存里 HTML 和 JS 版本对不上导致初始化失败，
    自动清掉缓存重新加载一次，避免用户面对一个死掉的界面。

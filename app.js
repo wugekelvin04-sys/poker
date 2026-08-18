@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v7';
+  var APP_VERSION = 'v8';
 
   var state = {
     hero: [null, null],
@@ -467,16 +467,43 @@
     var out = $('oddsOut');
     var pot = num(state.pot), call = num(state.call);
 
-    if (!pot) { out.textContent = '填入底池金额'; return; }
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
 
     var eq = lastResult.equity;
     var fair = 1 / state.players;          // 均分时每人应得的份额
+    var ratio = eq / fair;
     var html;
 
+    // 底池填 0：第一轮，还没人往池里放钱。
+    // 没有底池就算不出赔率，也给不出具体筹码数，只能按牌力强弱定性判断。
+    if (pot <= 0) {
+      if (call > 0) {
+        out.innerHTML = '<span class="verdict even">底池对不上</span>'
+          + '有人下注，底池就不可能是 0。底池请填<b>对手下注之后</b>的总额。';
+        return;
+      }
+      var v0, c0, d0;
+      if (ratio >= 1.6) {
+        v0 = '值得进攻'; c0 = 'good';
+        d0 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌的公平份额 <b>'
+          + pct(fair) + '</b>，主动下注建池。';
+      } else if (ratio >= 1.15) {
+        v0 = '可以入池'; c0 = 'good';
+        d0 = '胜率 <b>' + pct(eq) + '</b> 略高于公平份额 <b>' + pct(fair) + '</b>，值得看一手，别投太多。';
+      } else if (ratio >= 0.85) {
+        v0 = '边缘'; c0 = 'even';
+        d0 = '胜率 <b>' + pct(eq) + '</b> 和公平份额 <b>' + pct(fair) + '</b> 差不多，看位置决定。';
+      } else {
+        v0 = '弃牌 ✕'; c0 = 'bad';
+        d0 = '胜率 <b>' + pct(eq) + '</b> 明显不到公平份额 <b>' + pct(fair) + '</b>，这手不值得投钱。';
+      }
+      out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>' + d0
+        + '<br>填上底池金额，就能给出该下多少筹码。';
+      return;
+    }
+
     if (call <= 0) {
-      // ---- 没人下注：过牌还是下注，下多少 ----
-      var ratio = eq / fair;
+      // ---- 底池里有钱但没人下注：过牌还是下注，下多少 ----
       if (ratio >= 2) {
         var b1 = pot * 0.75;
         html = '<span class="verdict good">下注 ' + chips(b1) + '</span>'
