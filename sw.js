@@ -1,5 +1,5 @@
 /* Service Worker：把全部资源预缓存，飞行模式下也能打开 */
-const VERSION = 'v9';
+const VERSION = 'v11';
 const CACHE = 'poker-cal-' + VERSION;
 
 // 子资源都带 ?v=VERSION，和 index.html 里的引用完全一致。
@@ -11,6 +11,7 @@ const ASSETS = [
   'app.js?v=' + VERSION,
   'engine.js?v=' + VERSION,
   'sim.js?v=' + VERSION,
+  'preflop.js?v=' + VERSION,
   'manifest.webmanifest?v=' + VERSION,
   'worker.js?v=' + VERSION,
   'icons/icon-180.png',

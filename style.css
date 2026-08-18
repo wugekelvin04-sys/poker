@@ -24,7 +24,7 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 /* ---------- 结果区（吸顶） ---------- */
 .result{
   position:sticky; top:0; z-index:20;
-  padding:calc(var(--safe-t) + 7px) 16px 8px;
+  padding:calc(var(--safe-t) + 6px) 16px 7px;
   background:rgba(11,14,19,.86);
   -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
   border-bottom:1px solid var(--line);
@@ -49,8 +49,8 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 .eq-explain b{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
 
 /* ---------- 面板 ---------- */
-main{padding:10px 12px calc(var(--safe-b) + 14px);display:flex;flex-direction:column;gap:8px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:column;gap:7px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
 .link{color:var(--accent);font-size:13px;padding:4px 2px}
 .link:active{opacity:.5}
@@ -93,7 +93,7 @@ main{padding:10px 12px calc(var(--safe-b) + 14px);display:flex;flex-direction:co
 
 
 /* ---------- 人数分段 ---------- */
-.seat-row{display:flex;align-items:center;gap:9px;margin-top:10px}
+.seat-row{display:flex;align-items:center;gap:9px;margin-top:8px}
 .seat-lbl{flex:0 0 auto;font-size:11.5px;color:var(--muted)}
 .seat-lbl em{font-style:normal;color:var(--dim);font-size:10px;margin-left:3px}
 .seg{flex:1;display:grid;grid-template-columns:repeat(9,1fr);gap:4px}
@@ -111,6 +111,8 @@ main{padding:10px 12px calc(var(--safe-b) + 14px);display:flex;flex-direction:co
 .improve{font-size:11.5px;color:var(--muted);margin-top:3px}
 .improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
 .dist{margin-top:10px;display:flex;flex-direction:column;gap:5px}
+/* 收起时容器是空的，别让外边距继续占高度 */
+.dist:empty{display:none}
 .dist-row{display:grid;grid-template-columns:56px 1fr 52px;align-items:center;gap:8px;font-size:11.5px}
 .dist-row .nm{color:var(--muted)}
 .dist-row .tr{display:block;height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden}
@@ -132,7 +134,7 @@ main{padding:10px 12px calc(var(--safe-b) + 14px);display:flex;flex-direction:co
 .quick{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:7px}
 .quick button{padding:8px 1px;border-radius:7px;background:var(--panel-2);font-size:11.5px;color:var(--muted);white-space:nowrap}
 .quick button:active{transform:scale(.94)}
-.odds-out{margin-top:9px;font-size:12.5px;color:var(--muted);line-height:1.55}
+.odds-out{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5}
 .odds-out .verdict{display:block;font-size:18px;font-weight:650;margin-bottom:4px;letter-spacing:-.01em}
 .odds-out .good{color:var(--win)} .odds-out .bad{color:var(--lose)} .odds-out .even{color:var(--tie)}
 .odds-out b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
@@ -179,6 +181,20 @@ main{padding:10px 12px calc(var(--safe-b) + 14px);display:flex;flex-direction:co
 .hint b{color:var(--muted);font-weight:600}
 #bettors{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
 
-.ver{text-align:center;padding:2px 0 0}
-.ver button{font-size:10px;color:#454e5e;padding:2px 8px}
+.ver{text-align:center;padding:0}
+.ver button{font-size:9.5px;color:#454e5e;padding:1px 8px}
 .ver button:active{color:var(--accent)}
+
+.odds-out .caveat{color:var(--dim);font-size:10.5px}
+
+/* 全局配置：大盲与带入深度，默认收起不占高度 */
+.cfg{display:flex;gap:10px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+.cfg label{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:6px;
+  background:var(--panel-2);border-radius:9px;padding:0 11px;font-size:11.5px;color:var(--muted)}
+.cfg input{flex:1;min-width:0;padding:8px 0;font-size:15px;font-weight:600;text-align:right;
+  font-variant-numeric:tabular-nums}
+.cfg input::placeholder{color:var(--dim);font-weight:400}
+.cfg .unit{font-size:11px;color:var(--dim)}
+
+.seg.pos{grid-template-columns:repeat(6,1fr)}
+.seg.pos button{font-size:12px;padding:7px 0}

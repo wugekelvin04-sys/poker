@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v9';
+  var APP_VERSION = 'v11';
 
   var state = {
     hero: [null, null],
@@ -27,6 +27,10 @@
     pot: '',
     call: '',
     bettors: 1,          // 我前面已经投了这个跟注额的人数
+    pos: 'mid',          // 我的位置，决定开池范围
+    bb: '2',             // 一个大盲多少筹码
+    stack: '100',        // 带入深度，单位是大盲
+    showCfg: false,
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
   };
@@ -50,6 +54,10 @@
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
         if (s.bettors >= 0 && s.bettors <= 9) state.bettors = s.bettors;
+        if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
+        if (s.bb !== undefined) state.bb = String(s.bb);
+        if (s.stack !== undefined) state.stack = String(s.stack);
+        state.showCfg = !!s.showCfg;
       }
     } catch (e) {}
   }
@@ -134,23 +142,49 @@
     }
   }
 
-  /* 前面下注人数：最多到「我之外的人数」，超过没有意义 */
-  function renderBettors() {
-    var box = $('bettors');
+  /* 0 到 人数−1 的数字选择条，前面下注人数和后面剩余人数共用 */
+  function renderCounter(boxId, key) {
+    var box = $(boxId);
     var maxN = state.players - 1;
-    if (state.bettors > maxN) state.bettors = maxN;
+    if (state[key] > maxN) state[key] = maxN;
     box.innerHTML = '';
     for (var n = 0; n <= maxN; n++) {
       (function (n) {
         var b = document.createElement('button');
         b.textContent = n;
-        if (n === state.bettors) b.className = 'on';
+        if (n === state[key]) b.className = 'on';
         b.addEventListener('click', function () {
-          state.bettors = n; renderBettors(); save(); renderOdds();
+          state[key] = n; renderCounter(boxId, key); save(); renderOdds();
         });
         box.appendChild(b);
       })(n);
     }
+  }
+
+  function renderPos() {
+    var box = $('pos');
+    box.innerHTML = '';
+    POS.forEach(function (p) {
+      var b = document.createElement('button');
+      b.textContent = p.n;
+      if (p.k === state.pos) b.className = 'on';
+      b.addEventListener('click', function () {
+        state.pos = p.k; renderPos(); save(); renderOdds();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function renderBettors() {
+    renderCounter('bettors', 'bettors');
+    renderPos();
+    // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
+    var preflop = state.board.every(function (c) { return c === null; });
+    $('posRow').hidden = !preflop;
+    $('bettorsRow').hidden = num(state.call) <= 0;
+    // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
+    $('quickBets').hidden = preflop;
+    $('hintRow').hidden = preflop;
   }
 
   // ---------- 选牌抽屉 ----------
@@ -159,7 +193,10 @@
     deck.innerHTML = '';
     var used = usedCards();
     var cur = active >= 0 ? slotCard(active) : null;
-    for (var s = 0; s < 4; s++) {
+    // 花色编码是 0♠ 1♥ 2♦ 3♣，但选牌面板按 黑桃 红桃 梅花 方片 排
+    var SUIT_ORDER = [0, 1, 3, 2];
+    for (var si = 0; si < 4; si++) {
+      var s = SUIT_ORDER[si];
       var row = document.createElement('div');
       row.className = 'deck-row';
       for (var r = 12; r >= 0; r--) {
@@ -206,7 +243,7 @@
     for (var k = active + 1; k < SLOTS.length && SLOTS[k].group === group; k++) {
       if (slotCard(k) === null) { next = k; break; }
     }
-    save(); compute();
+    save(); renderBettors(); compute();
     if (next >= 0) openPicker(next); else closePicker();
   }
 
@@ -479,9 +516,56 @@
   // ---------- 底池赔率 ----------
   function num(v) { var x = parseFloat(v); return isFinite(x) && x > 0 ? x : 0; }
 
+  /* 位置。翻牌前盲注是在庄家之后行动的，所以不能用「后面还有几人」来推——
+     那样庄位会数出小盲大盲两个人，被判成很紧的范围，而实际庄位开得最宽。 */
+  var POS = [
+    { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
+    { k: 'btn', n: '庄位' }, { k: 'sb', n: '小盲' }, { k: 'bb', n: '大盲' }
+  ];
+
+  /* 标准开池范围（RFI），对照常见图表。人多的桌前面几个位置要更紧。
+     盲注是另一回事：已经投过钱、且翻牌后位置最差，单独处理。 */
+  var OPEN_RANGE = {
+    short: { early: 0.16, mid: 0.21, late: 0.28, btn: 0.45, sb: 0.42 },  // 6 人及以下
+    full:  { early: 0.11, mid: 0.16, late: 0.24, btn: 0.42, sb: 0.40 }   // 7 人及以上
+  };
+
+  function openRange() {
+    var t = state.players >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short;
+    return t[state.pos] || t.mid;
+  }
+
+  function posName() {
+    for (var i = 0; i < POS.length; i++) if (POS[i].k === state.pos) return POS[i].n;
+    return '中位';
+  }
+
   /* 筹码金额取整：大额不带小数，小额留一位 */
   function chips(x) {
     return x >= 20 ? String(Math.round(x)) : String(Math.round(x * 10) / 10);
+  }
+
+  function bbVal() { var v = parseFloat(state.bb); return isFinite(v) && v > 0 ? v : 0; }
+
+  /* 有效筹码（我手上还有多少），单位是筹码 */
+  function stackChips() {
+    var n = parseFloat(state.stack), b = bbVal();
+    return (isFinite(n) && n > 0 && b) ? n * b : 0;
+  }
+
+  /* 把筹码数写成「75（37.5BB）」；没配大盲就只写筹码 */
+  function amt(x) {
+    var b = bbVal();
+    if (!b) return chips(x);
+    var n = x / b;
+    return chips(x) + '（' + (n >= 10 ? n.toFixed(0) : n.toFixed(1)) + 'BB）';
+  }
+
+  /* 下注/加注不能超过手上的筹码，超了就是全下 */
+  function sized(x) {
+    var st = stackChips();
+    if (st && x >= st) return { text: '全下 ' + amt(st), allin: true, value: st };
+    return { text: amt(x), allin: false, value: x };
   }
 
   function renderOdds() {
@@ -497,47 +581,70 @@
     var fair = 1 / state.players;          // 均分时每人应得的份额
     var ratio = eq / fair;
 
+    // ---- 翻牌前、没人下注：这是开池决策 ----
+    // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
+    // 你赢的是盲注，而全下均分完全没有弃牌率这回事。
+    // 正确做法是看这手牌在 169 手起手牌里的强度排位，再对照位置该开多宽。
+    if (state.board.every(function (c) { return c === null; }) && call <= 0 && window.PokerPreflop) {
+      var pctl = PokerPreflop.percentile(state.hero[0], state.hero[1]);
+
+      // 大盲位没人加注，就是免费看翻牌，不存在开不开池的问题
+      if (state.pos === 'bb') {
+        out.innerHTML = '<span class="verdict even">过牌</span>'
+          + '大盲没人加注 = 免费看翻牌，没理由再投钱。这手牌排<b>前 '
+          + (pctl * 100).toFixed(0) + '%</b>。';
+        return;
+      }
+
+      var open = openRange();
+      var v0, c0, act;
+      if (pctl <= open) {
+        v0 = '开池加注'; c0 = 'good'; act = '在范围内';
+      } else if (pctl <= open * 1.35) {
+        v0 = '边缘'; c0 = 'even'; act = '略超范围，桌子松可以开';
+      } else {
+        v0 = '弃牌 ✕'; c0 = 'bad'; act = '超出范围较多';
+      }
+      if (c0 === 'good') {
+        var bv = bbVal();
+        if (bv) {
+          var rz0 = sized((state.pos === 'sb' ? 3 : 2.5) * bv);
+          v0 = rz0.allin ? rz0.text : '开池加注到 ' + rz0.text;
+        } else {
+          act += '，标准尺度 2.5–3 倍大盲';
+        }
+      }
+      out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>'
+        + posName() + state.players + ' 人桌开<b>前 ' + (open * 100).toFixed(0) + '%</b>，'
+        + '这手牌排<b>前 ' + (pctl * 100).toFixed(0) + '%</b> → ' + act
+        + '<br><span class="caveat">小对子和同花连张的实战价值高于此排位</span>';
+      return;
+    }
+
     // ---- 没人下注 ----
     if (call <= 0) {
       if (potNow <= 0) {
-        // 第一轮，池子还是空的：没有底池就算不出赔率，只能定性判断
-        var v0, c0, d0;
-        if (ratio >= 1.6) {
-          v0 = '值得进攻'; c0 = 'good';
-          d0 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌的公平份额 <b>'
-            + pct(fair) + '</b>，主动下注建池。';
-        } else if (ratio >= 1.15) {
-          v0 = '可以入池'; c0 = 'good';
-          d0 = '胜率 <b>' + pct(eq) + '</b> 略高于公平份额 <b>' + pct(fair) + '</b>，值得看一手，别投太多。';
-        } else if (ratio >= 0.85) {
-          v0 = '边缘'; c0 = 'even';
-          d0 = '胜率 <b>' + pct(eq) + '</b> 和公平份额 <b>' + pct(fair) + '</b> 差不多，看位置决定。';
-        } else {
-          v0 = '弃牌 ✕'; c0 = 'bad';
-          d0 = '胜率 <b>' + pct(eq) + '</b> 明显不到公平份额 <b>' + pct(fair) + '</b>，这手不值得投钱。';
-        }
-        out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>' + d0
-          + '<br>填上底池金额，就能给出该下多少筹码。';
+        out.innerHTML = '<span class="verdict even">缺少底池</span>'
+          + '翻牌后没有底池就算不出该下多少，填一下原底池。';
         return;
       }
       var bet, verdict1, cls1, why1;
       if (ratio >= 2) {
-        bet = potNow * 0.75;
-        verdict1 = '下注 ' + chips(bet); cls1 = 'good';
-        why1 = '牌力明显领先：胜率 <b>' + pct(eq) + '</b>，' + state.players
-          + ' 人桌的公平份额只有 <b>' + pct(fair) + '</b>。下 ¾ 池要价值。';
+        bet = sized(potNow * 0.75);
+        verdict1 = bet.allin ? bet.text : '下注 ' + bet.text; cls1 = 'good';
+        why1 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
+          + pct(fair) + '</b>，下 ¾ 池要价值。';
       } else if (ratio >= 1.3) {
-        bet = potNow * 0.5;
-        verdict1 = '下注 ' + chips(bet); cls1 = 'good';
-        why1 = '小幅领先：胜率 <b>' + pct(eq) + '</b> 高于公平份额 <b>' + pct(fair)
-          + '</b>。下 ½ 池薄价值，别下太大。';
+        bet = sized(potNow * 0.5);
+        verdict1 = bet.allin ? bet.text : '下注 ' + bet.text; cls1 = 'good';
+        why1 = '胜率 <b>' + pct(eq) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
       } else {
         verdict1 = '过牌'; cls1 = 'even';
-        why1 = '胜率 <b>' + pct(eq) + '</b> 没到 ' + state.players + ' 人桌的公平份额 <b>'
-          + pct(fair) + '</b>，先别主动投钱。';
+        why1 = '胜率 <b>' + pct(eq) + '</b> 没到 ' + state.players + ' 人桌均分的 <b>'
+          + pct(fair) + '</b>，先别投钱。';
       }
       out.innerHTML = '<span class="verdict ' + cls1 + '">' + verdict1 + '</span>' + why1
-        + '<br>当前底池 <b>' + chips(potNow) + '</b>。';
+        + '<br>当前底池 <b>' + amt(potNow) + '</b>。';
       return;
     }
 
@@ -556,19 +663,36 @@
     var verdict, cls;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
     else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; }
-    else if (eq >= 1.6 * fair && edge >= 0.15) { verdict = '加注到 ' + chips(raiseTo); cls = 'good'; }
-    else { verdict = '跟注 ' + chips(call); cls = 'good'; }
+    else if (eq >= 1.6 * fair && edge >= 0.15) {
+      var rz = sized(raiseTo);
+      verdict = rz.allin ? rz.text : '加注到 ' + rz.text; cls = 'good';
+    }
+    else { verdict = '跟注 ' + amt(call); cls = 'good'; }
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
       + '底池 <b>' + chips(potNow) + '</b>'
       + (bettors > 0 && call > 0
-          ? '（原 ' + chips(potBefore) + ' + ' + bettors + ' 人 × ' + chips(call) + '）'
+          ? '（' + chips(potBefore) + '+' + bettors + '×' + chips(call) + '）'
           : '')
-      + '，跟注需要 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
+      + '，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
       + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
-    if (cls === 'good' && verdict.indexOf('加注') === 0) {
-      html += '<br>优势够大，值得加注施压：跟平后按约 ⅔ 池加到 <b>' + chips(raiseTo) + '</b>。';
+    if (state.board.every(function (c) { return c === null; })) {
+      // 翻牌前对手敢下注，他的牌一定强于随机牌，而胜率是按随机牌算的
+      // 口袋对子翻牌摸中暗三约 11.8%，业界经验是有效筹码达到跟注额 15 倍就值得摸
+      var h0 = state.hero[0], h1 = state.hero[1];
+      if (h0 !== null && h1 !== null && (h0 >> 2) === (h1 >> 2)) {
+        var stk = stackChips();
+        if (stk && call > 0 && stk >= 15 * call && verdict.indexOf('弃牌') === 0) {
+          html += '<br><span class="caveat">但口袋对子有隐含赔率：筹码 ' + chips(stk)
+            + ' 是跟注额 ' + (stk / call).toFixed(0) + ' 倍（≥15 即可），翻牌 12% 中暗三，可跟</span>';
+        }
+      }
+      // 大盲已经投过钱，防守价格比别人好
+      if (state.pos === 'bb' && call > 0) {
+        html += '<br><span class="caveat">大盲已投过钱，防守可更宽，但翻牌后无位置</span>';
+      }
+      html += '<br><span class="caveat">对手敢下注，范围强于随机牌，实战胜率比这更低</span>';
     }
     out.innerHTML = html;
   }
@@ -600,15 +724,21 @@
         var what = b.dataset.clear;
         if (what === 'hero' || what === 'all') state.hero = [null, null];
         if (what === 'board' || what === 'all') state.board = [null, null, null, null, null];
-        save(); renderSlots(); compute();
+        save(); renderSlots(); renderBettors(); compute();
       });
     });
 
-    ['pot', 'call'].forEach(function (k) {
+    $('toggleCfg').addEventListener('click', function () {
+      state.showCfg = !state.showCfg;
+      $('cfgRow').hidden = !state.showCfg;
+      $('toggleCfg').textContent = state.showCfg ? '收起' : '设置';
+      save();
+    });
+    ['pot', 'call', 'bb', 'stack'].forEach(function (k) {
       var el = $(k);
       el.value = state[k];
       el.addEventListener('input', function () {
-        state[k] = el.value; save(); renderOdds();
+        state[k] = el.value; save(); renderBettors(); renderOdds();
       });
       // 点进来光标会落在数字中间，很难改。直接全选，打字即覆盖。
       el.addEventListener('focus', function () {
@@ -630,6 +760,7 @@
       // 底池填的是下注之前的数额，所以尺度直接乘即可，无需折算
       state.call = String(Math.round(pot * f * 10) / 10);
       if (state.bettors < 1) state.bettors = 1;
+      if (f === 0) state.call = '0';
       $('call').value = state.call;
       renderBettors(); save(); renderOdds();
     });
@@ -638,6 +769,8 @@
   // ---------- 启动 ----------
   try {
     load();
+    $('cfgRow').hidden = !state.showCfg;
+    $('toggleCfg').textContent = state.showCfg ? '收起' : '设置';
     renderSlots();
     renderPlayers();
     renderBettors();
