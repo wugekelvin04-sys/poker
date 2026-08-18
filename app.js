@@ -150,6 +150,11 @@
 
   function pickCard(c) {
     if (active < 0) return;
+    // 同一张牌不能出现在两个位置。抽屉里已经置灰了，这里再兜一道，
+    // 免得任何意外路径把重复牌塞进去导致计算直接报错。
+    for (var k = 0; k < SLOTS.length; k++) {
+      if (k !== active && slotCard(k) === c) return;
+    }
     setSlotCard(active, c);
     // 自动跳到后面第一个空槽，连着选不用反复开关
     var next = -1;
@@ -161,9 +166,33 @@
   }
 
   // ---------- 计算 ----------
-  var worker = null, runId = 0, debounce = null;
+  var worker = null, runId = 0, debounce = null, fallbackTimer = null;
 
-  function stopWorker() { if (worker) { worker.terminate(); worker = null; } }
+  function stopWorker() {
+    if (worker) { worker.terminate(); worker = null; }
+    clearTimeout(fallbackTimer); fallbackTimer = null;
+  }
+
+  /* Worker 起不来或没回音时，退回主线程算。
+     少跑一些次数、限时 700ms，宁可精度低一点也不能卡住不出结果。 */
+  function runOnMainThread(hero, board, id, why) {
+    if (id !== runId) return;
+    stopWorker();
+    if (!window.PokerSim) { $('eqNote').textContent = '计算模块没能加载，刷新试试'; return; }
+    try {
+      var res = (board.length === 5 && state.players === 2)
+        ? PokerSim.enumerateShowdownHeadsUp(hero, board)
+        : PokerSim.simulate({
+            hero: hero, board: board, players: state.players,
+            maxIterations: 120000, timeLimitMs: 700
+          });
+      lastResult = res;
+      renderResult(res, true);
+      $('eqNote').textContent += ' · 主线程' + (why ? '（' + why + '）' : '');
+    } catch (err) {
+      $('eqNote').textContent = '出错：' + String((err && err.message) || err);
+    }
+  }
 
   function compute() {
     clearTimeout(debounce);
@@ -194,16 +223,34 @@
     if (2 * state.players + 5 > 52) { $('eqNote').textContent = '人数过多'; return; }
 
     $('eqNote').textContent = '计算中…';
-    worker = new Worker('worker.js');
     var id = runId;
+
+    try {
+      worker = new Worker('worker.js');
+    } catch (err) {
+      // 某些浏览器或隐私设置下根本创建不了 Worker
+      runOnMainThread(hero, board, id, '本机不支持后台线程');
+      return;
+    }
+
+    worker.onerror = function (ev) {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      runOnMainThread(hero, board, id, '后台线程出错');
+    };
     worker.onmessage = function (e) {
       var m = e.data;
       if (m.id !== runId) return;
-      if (m.type === 'error') { $('eqNote').textContent = '出错：' + m.message; return; }
+      if (m.type === 'error') { $('eqNote').textContent = '出错：' + m.message; stopWorker(); return; }
+      clearTimeout(fallbackTimer); fallbackTimer = null;
       lastResult = m.result;
       renderResult(m.result, m.type === 'done');
       if (m.type === 'done') stopWorker();
     };
+    // worker 迟迟不回音也要出结果，绝不能停在「计算中…」
+    fallbackTimer = setTimeout(function () {
+      runOnMainThread(hero, board, id, '后台线程无响应');
+    }, 4000);
+
     worker.postMessage({
       type: 'run', id: id, hero: hero, board: board, players: state.players,
       maxIterations: 250000, timeLimitMs: 1600
