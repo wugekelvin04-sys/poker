@@ -10,10 +10,10 @@
 <meta name="apple-mobile-web-app-title" content="胜率">
 <meta name="theme-color" content="#0b0e13">
 <meta name="color-scheme" content="dark">
-<link rel="manifest" href="manifest.webmanifest?v=v12">
+<link rel="manifest" href="manifest.webmanifest?v=v13">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v12">
+<link rel="stylesheet" href="style.css?v=v13">
 </head>
 <body>
 
@@ -39,11 +39,11 @@
       <div class="acts">
         <button class="link" id="toggleHero">隐藏</button>
         <button class="link" data-clear="board">清牌面</button>
-        <button class="link" data-clear="all">全清</button>
+        <button class="link" data-clear="new">新一局</button>
       </div>
     </div>
     <div class="cards" id="cards"></div>
-    <div class="seat-row"><span class="seat-lbl">人数<em>含我</em></span><div class="seg" id="players"></div></div>
+    <div class="seat-row"><span class="seat-lbl">还剩几人<em>含我，弃牌不算</em></span><div class="seg" id="players"></div></div>
   </section>
 
   <section class="panel">
@@ -62,7 +62,6 @@
       <label>原底池<input id="pot" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></label>
       <label>需跟注<input id="call" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></label>
     </div>
-    <div class="seat-row" id="bettorsRow"><span class="seat-lbl">前面几人下注</span><div class="seg" id="bettors"></div></div>
     <div class="seat-row" id="posRow"><span class="seat-lbl">我的位置</span><div class="seg pos" id="pos"></div></div>
     <p class="hint" id="hintRow">原底池 = 他们下注<b>前</b>池里的钱；需跟注 0 = 没人下注</p>
     <div class="quick" id="quickBets">
@@ -90,10 +89,10 @@
   <div class="deck" id="deck"></div>
 </section>
 
-<script src="engine.js?v=v12"></script>
-<script src="sim.js?v=v12"></script>
-<script src="preflop.js?v=v12"></script>
-<script src="app.js?v=v12"></script>
+<script src="engine.js?v=v13"></script>
+<script src="sim.js?v=v13"></script>
+<script src="preflop.js?v=v13"></script>
+<script src="app.js?v=v13"></script>
 <script>
 /* 自愈：万一缓存里 HTML 和 JS 版本对不上导致初始化失败，
    自动清掉缓存重新加载一次，避免用户面对一个死掉的界面。

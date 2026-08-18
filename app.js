@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v12';
+  var APP_VERSION = 'v13';
 
   var state = {
     hero: [null, null],
@@ -26,7 +26,6 @@
     players: 6,
     pot: '',
     call: '',
-    bettors: 1,          // 我前面已经投了这个跟注额的人数
     pos: 'mid',          // 我的位置，决定开池范围
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
@@ -50,7 +49,6 @@
         state.pot = s.pot || ''; state.call = s.call || '';
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
-        if (s.bettors >= 0 && s.bettors <= 9) state.bettors = s.bettors;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
       }
     } catch (e) {}
@@ -136,25 +134,6 @@
     }
   }
 
-  /* 0 到 人数−1 的数字选择条，前面下注人数和后面剩余人数共用 */
-  function renderCounter(boxId, key) {
-    var box = $(boxId);
-    var maxN = state.players - 1;
-    if (state[key] > maxN) state[key] = maxN;
-    box.innerHTML = '';
-    for (var n = 0; n <= maxN; n++) {
-      (function (n) {
-        var b = document.createElement('button');
-        b.textContent = n;
-        if (n === state[key]) b.className = 'on';
-        b.addEventListener('click', function () {
-          state[key] = n; renderCounter(boxId, key); save(); renderOdds();
-        });
-        box.appendChild(b);
-      })(n);
-    }
-  }
-
   function renderPos() {
     var box = $('pos');
     box.innerHTML = '';
@@ -170,12 +149,10 @@
   }
 
   function renderBettors() {
-    renderCounter('bettors', 'bettors');
     renderPos();
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
-    $('bettorsRow').hidden = num(state.call) <= 0;
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
     $('quickBets').hidden = preflop;
     $('hintRow').hidden = preflop;
@@ -546,8 +523,10 @@
 
     var potBefore = num(state.pot);        // 他们这轮下注之前池子里的钱
     var call = num(state.call);            // 我要跟的额度
-    var bettors = state.bettors;           // 前面已经投了这个额度的人数
-    var potNow = potBefore + call * bettors;   // 我行动时的实际底池
+    // 还在这手牌里的其他人都已投进这笔跟注额，
+    // 底池由「还剩几人」直接推出来，不用你心算
+    var bettors = state.players - 1;
+    var potNow = potBefore + call * bettors;
 
     var eq = lastResult.equity;
     var fair = 1 / state.players;          // 均分时每人应得的份额
@@ -611,12 +590,6 @@
     }
 
     // ---- 有人下注 ----
-    if (bettors <= 0) {
-      out.innerHTML = '<span class="verdict even">还差一步</span>'
-        + '既然要跟注，前面至少有一个人下了注。选一下<b>前面几人下注</b>，我才能算出底池。';
-      return;
-    }
-
     var required = call / (potNow + call);       // 跟注所需的最低胜率
     var ev = eq * (potNow + call) - call;        // 跟注的期望收益
     var edge = eq - required;
@@ -678,8 +651,13 @@
     document.querySelectorAll('[data-clear]').forEach(function (b) {
       b.addEventListener('click', function () {
         var what = b.dataset.clear;
-        if (what === 'hero' || what === 'all') state.hero = [null, null];
-        if (what === 'board' || what === 'all') state.board = [null, null, null, null, null];
+        if (what === 'hero' || what === 'new') state.hero = [null, null];
+        if (what === 'board' || what === 'new') state.board = [null, null, null, null, null];
+        if (what === 'new') {
+          // 开新一局：牌和这一手的金额都清掉，人数和位置留着
+          state.pot = ''; state.call = '';
+          $('pot').value = ''; $('call').value = '';
+        }
         save(); renderSlots(); renderBettors(); compute();
       });
     });
@@ -696,7 +674,7 @@
       });
     });
     $('clearOdds').addEventListener('click', function () {
-      state.pot = ''; state.call = ''; state.bettors = 1;
+      state.pot = ''; state.call = '';
       $('pot').value = ''; $('call').value = '';
       renderBettors(); save(); renderOdds();
     });
@@ -709,8 +687,6 @@
       if (!pot) { $('pot').focus(); return; }
       // 底池填的是下注之前的数额，所以尺度直接乘即可，无需折算
       state.call = String(Math.round(pot * f * 10) / 10);
-      if (state.bettors < 1) state.bettors = 1;
-      if (f === 0) state.call = '0';
       $('call').value = state.call;
       renderBettors(); save(); renderOdds();
     });
