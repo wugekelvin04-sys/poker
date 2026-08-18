@@ -18,12 +18,14 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v13';
+  var APP_VERSION = 'v14';
 
   var state = {
     hero: [null, null],
     board: [null, null, null, null, null],
-    players: 6,
+    tableSize: 6,        // 桌上一共几人，一局一局不变
+    seat: -1,            // 我在座位环里的下标，用于逐手轮转
+    players: 6,          // 这一手还剩几人没弃牌（含我）
     pot: '',
     call: '',
     pos: 'mid',          // 我的位置，决定开池范围
@@ -45,11 +47,13 @@
       if (s && typeof s === 'object') {
         if (Array.isArray(s.hero) && s.hero.length === 2) state.hero = s.hero;
         if (Array.isArray(s.board) && s.board.length === 5) state.board = s.board;
-        if (s.players >= 2 && s.players <= 10) state.players = s.players;
+        if (s.tableSize >= 2 && s.tableSize <= 10) state.tableSize = s.tableSize;
+        if (s.players >= 2 && s.players <= state.tableSize) state.players = s.players;
         state.pot = s.pot || ''; state.call = s.call || '';
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
+        if (typeof s.seat === 'number') state.seat = s.seat;
       }
     } catch (e) {}
   }
@@ -119,6 +123,24 @@
 
   // ---------- 人数 ----------
   function renderPlayers() {
+    // 桌上总人数：一局一局不变，新一局时「还剩」恢复到这个数
+    var tbox = $('tableSize');
+    tbox.innerHTML = '';
+    for (var t = 2; t <= 10; t++) {
+      (function (t) {
+        var b = document.createElement('button');
+        b.textContent = t;
+        if (t === state.tableSize) b.className = 'on';
+        b.addEventListener('click', function () {
+          state.tableSize = t;
+          if (state.players > t) state.players = t;
+          state.seat = posCycle().indexOf(state.pos);   // 换桌型要重新定位座位
+          renderPlayers(); renderBettors(); save(); compute();
+        });
+        tbox.appendChild(b);
+      })(t);
+    }
+    // 还剩几人：不可能多于桌上总人数
     var box = $('players');
     box.innerHTML = '';
     for (var p = 2; p <= 10; p++) {
@@ -126,7 +148,9 @@
         var b = document.createElement('button');
         b.textContent = p;
         if (p === state.players) b.className = 'on';
+        if (p > state.tableSize) b.className = 'off';
         b.addEventListener('click', function () {
+          if (p > state.tableSize) return;
           state.players = p; renderPlayers(); renderBettors(); save(); compute();
         });
         box.appendChild(b);
@@ -142,7 +166,10 @@
       b.textContent = p.n;
       if (p.k === state.pos) b.className = 'on';
       b.addEventListener('click', function () {
-        state.pos = p.k; renderPos(); save(); renderOdds();
+        // 手动选位置时，落到该档的第一个座位
+        state.pos = p.k;
+        state.seat = posCycle().indexOf(p.k);
+        renderPos(); save(); renderOdds();
       });
       box.appendChild(b);
     });
@@ -209,11 +236,11 @@
       if (k !== active && slotCard(k) === c) return;
     }
     setSlotCard(active, c);
-    // 自动跳到同一组里后面第一个空槽，连着选不用反复开关；本组选完就收起
-    var group = SLOTS[active].group, next = -1;
-    for (var k = active + 1; k < SLOTS.length && SLOTS[k].group === group; k++) {
-      if (slotCard(k) === null) { next = k; break; }
-    }
+    // 从点的那张一路选到本组最后一张，中间那张即使已经有牌也照样停一下，
+    // 方便顺手改；走完本组才收起抽屉。
+    var group = SLOTS[active].group;
+    var next = (active + 1 < SLOTS.length && SLOTS[active + 1].group === group)
+      ? active + 1 : -1;
     save(); renderBettors(); compute();
     if (next >= 0) openPicker(next); else closePicker();
   }
@@ -506,6 +533,42 @@
     return t[state.pos] || t.mid;
   }
 
+  /* 庄家每手顺时针挪一位，我的位置也跟着走一格。座位环必须按桌上总人数生成，
+     环长 = 总人数，不能写死。顺序（沿轮转方向）：
+       庄位 → 后位 → 中位… → 前位… → 大盲 → 小盲 → 回到庄位
+     人多的桌中位和前位各占好几个座位，所以会在同一档连续待上几手，这是对的。 */
+  function posCycle() {
+    var n = state.tableSize;
+    if (n <= 2) return ['btn', 'bb'];          // 单挑时庄位即小盲
+    var arr = ['btn'];
+    var mids = n - 3;                          // 既非庄位也非盲注的座位数
+    if (mids >= 1) {
+      arr.push('late');
+      var rest = mids - 1;
+      var m = Math.ceil(rest / 2);
+      for (var i = 0; i < m; i++) arr.push('mid');
+      for (var j = 0; j < rest - m; j++) arr.push('early');
+    }
+    arr.push('bb', 'sb');
+    return arr;
+  }
+
+  /* 位置在环里可能重复（8 人桌有两个中位），所以要记座位下标，
+     只按名字找会永远停在第一个同名座位上出不去。 */
+  function seatIndex() {
+    var cyc = posCycle();
+    if (state.seat >= 0 && state.seat < cyc.length && cyc[state.seat] === state.pos) return state.seat;
+    var i = cyc.indexOf(state.pos);
+    return i < 0 ? 0 : i;
+  }
+
+  function advanceSeat() {
+    var cyc = posCycle();
+    var i = (seatIndex() + 1) % cyc.length;
+    state.seat = i;
+    state.pos = cyc[i];
+  }
+
   function posName() {
     for (var i = 0; i < POS.length; i++) if (POS[i].k === state.pos) return POS[i].n;
     return '中位';
@@ -650,13 +713,18 @@
 
     document.querySelectorAll('[data-clear]').forEach(function (b) {
       b.addEventListener('click', function () {
-        var what = b.dataset.clear;
-        if (what === 'hero' || what === 'new') state.hero = [null, null];
-        if (what === 'board' || what === 'new') state.board = [null, null, null, null, null];
+        var what = b.dataset.clear;   // all=牌全清  new=开新一局
+        state.hero = [null, null];
+        state.board = [null, null, null, null, null];
         if (what === 'new') {
-          // 开新一局：牌和这一手的金额都清掉，人数和位置留着
+          // 开新一局：牌和金额清掉；人数恢复成桌上总人数；
+          // 庄家挪一位，我的位置也跟着顺延一格
           state.pot = ''; state.call = '';
           $('pot').value = ''; $('call').value = '';
+          state.players = state.tableSize;
+          advanceSeat();
+          state.hideHero = true;   // 新一局默认盖着，想看点一下牌背
+          renderPlayers();
         }
         save(); renderSlots(); renderBettors(); compute();
       });
