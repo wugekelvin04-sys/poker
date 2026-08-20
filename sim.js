@@ -31,24 +31,33 @@
      牌面 2-5-6 上 34 打成顺子却排在起手牌的后 5%，AK 只是 A 高却排前 5%——
      按起手牌筛出来的范围，废牌比随机范围还多，方向是反的。 */
   var PAIR_FLOOR = 1 << 20;      // 一对这一档的下限
+  var TWO_PAIR_FLOOR = 2 << 20;  // 两对
 
   function boardStrength(c1, c2, board, bn) {
     var hand = [c1, c2];
     for (var i = 0; i < bn; i++) hand.push(board[i]);
     var sc = evalHand(hand, bn + 2);
-    if (bn < 5 && sc < PAIR_FLOOR) {
-      // 还有牌要发时，强听牌不能当废牌筛掉：四张同花或四张连牌，至少按一对看
-      var suit = [0, 0, 0, 0], mask = (1 << (c1 >> 2)) | (1 << (c2 >> 2));
+    if (bn < 5 && sc < TWO_PAIR_FLOOR) {
+      /* 还有牌要发时，强听牌不能当废牌筛掉。
+         听牌必须用到至少一张底牌——公共牌自己凑出四张同花跟我没关系。 */
+      var hole = (1 << (c1 >> 2)) | (1 << (c2 >> 2));
+      var suit = [0, 0, 0, 0], mask = hole;
       suit[c1 & 3]++; suit[c2 & 3]++;
       for (var k = 0; k < bn; k++) { suit[board[k] & 3]++; mask |= 1 << (board[k] >> 2); }
-      var draw = suit[0] === 4 || suit[1] === 4 || suit[2] === 4 || suit[3] === 4;
-      if (!draw) {
-        for (var h = 12; h >= 3; h--) {
-          var run = 0xF << (h - 3);
-          if ((mask & run) === run) { draw = true; break; }
-        }
+      var flushDraw = suit[c1 & 3] >= 4 || suit[c2 & 3] >= 4;
+      var straightDraw = false;
+      for (var h = 12; h >= 3; h--) {
+        var run = 0xF << (h - 3);
+        if ((mask & run) === run && (hole & run)) { straightDraw = true; break; }
       }
-      if (draw) sc = PAIR_FLOOR;
+      /* 听牌值多少：到河牌时同花听约 35%、两头顺约 32%，跟一个高对差不多，
+         同花+顺双听接近两对。以前一律压成 PAIR_FLOOR——比最烂的一对还低，
+         导致范围一收紧就把对手的听牌全删光，我方胜率反而涨。 */
+      var drawScore = 0;
+      if (flushDraw && straightDraw) drawScore = TWO_PAIR_FLOOR;
+      else if (flushDraw) drawScore = PAIR_FLOOR | (11 << 16);   // ≈ 一对 K
+      else if (straightDraw) drawScore = PAIR_FLOOR | (8 << 16); // ≈ 一对 T
+      if (drawScore > sc) sc = drawScore;
     }
     return sc;
   }
@@ -105,7 +114,13 @@
     if (players < 2 || players > 10) throw new Error('人数需在 2-10 之间');
 
     var deck = buildDeck(hero.concat(board));
-    var oppCount = players - 1;
+    /* 人数允许带小数。「预计跟到摊牌的人数」是估出来的，硬取整会造成整整
+       一个人的跳变——而一个对手值好几个胜率点，比范围收紧的影响还大，
+       于是「对手更紧」反而算出更高的胜率。这里把小数部分变成概率：
+       最边缘的那个对手按 frac 的概率参加，多局平均下来就是小数人数。 */
+    var oppExact = players - 1;
+    var oppCount = Math.ceil(oppExact - 1e-9);       // 最多可能有几个对手
+    var oppFrac = oppExact - (oppCount - 1);         // 最后那个对手到场的概率 (0,1]
     var need = 5 - board.length;
     var draw = need + oppCount * 2;
     if (draw > deck.length) throw new Error('剩余牌不够发给这么多人');
@@ -212,7 +227,9 @@
         catCounts[heroScore >>> 20]++;
 
         var best = -1, ties = 0;
-        for (var p = 0; p < oppCount; p++) {
+        // 最后一个对手是「小数人头」，按概率决定这一局他在不在
+        var live = (oppFrac < 1 && rng() >= oppFrac) ? oppCount - 1 : oppCount;
+        for (var p = 0; p < live; p++) {
           o7[0] = deck[need + p * 2];
           o7[1] = deck[need + p * 2 + 1];
           var s = evalHand(o7, 7);

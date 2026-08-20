@@ -20,6 +20,7 @@ self.onmessage = function (e) {
         players: msg.players,
         maxIterations: msg.maxIterations,
         timeLimitMs: msg.timeLimitMs,
+        seed: msg.seed,
         oppMaxPctl: msg.oppMaxPctl,
         oppBoardTop: msg.oppBoardTop,
         oppStrong: msg.oppStrong,

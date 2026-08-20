@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v48';
+  var APP_VERSION = 'v49';
 
   var state = {
     hero: [null, null],
@@ -419,7 +419,7 @@
     clearTimeout(mainLoopTimer);
     if (!window.PokerSim) { setBusy(false); return; }
 
-    if (board.length === 5 && showdownPlayers() === 2) {
+    if (board.length === 5 && Math.round(showdownPlayers()) === 2) {
       try {
         var ex = PokerSim.enumerateShowdownHeadsUp(hero, board, 1, activePctl());
         lastResult = ex; renderResult(ex, true);
@@ -435,7 +435,7 @@
       try {
         var part = PokerSim.simulate({
           hero: hero, board: board, players: showdownPlayers(),
-          maxIterations: CHUNK, timeLimitMs: 0,
+          maxIterations: CHUNK, timeLimitMs: 0, seed: (scenarioSeed() + (acc ? acc.n : 0)) >>> 0,
           oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
           oppBoardTop: board.length >= 3 ? activePctl() : undefined,
           oppStrong: strongOppCount(),
@@ -511,7 +511,7 @@
 
     worker.postMessage({
       type: 'run', id: id, hero: hero, board: board, players: showdownPlayers(),
-      maxIterations: 250000, timeLimitMs: 1600,
+      maxIterations: 250000, timeLimitMs: 1600, seed: scenarioSeed(),
       oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
       oppBoardTop: board.length >= 3 ? activePctl() : undefined,
       oppStrong: strongOppCount(),
@@ -719,9 +719,12 @@
   /* 后面那些人有多大概率跟：小注跟的人多，大注跑的人多。
      尺度就是 要跟/底池（底池已含他的注，半池约 0.33、满池约 0.5）。
      娱乐局的人跟得更凶，老手更容易放掉。 */
-  function callRateBehind() {
+  /* 后面还没说话的人里，有多大比例会跟。注下得越大跟的人越少。
+     levelAware=true 时再按对手水平调整——松的桌子跟的人确实更多。 */
+  function callRateBehind(levelAware) {
     var ratio = state.pot > 0 ? state.call / state.pot : 0.33;
-    var mult = state.oppLevel === 'loose' ? 1.3 : state.oppLevel === 'tight' ? 0.75 : 1;
+    var mult = levelAware === false ? 1
+      : state.oppLevel === 'loose' ? 1.3 : state.oppLevel === 'tight' ? 0.75 : 1;
     return Math.max(0.05, Math.min(0.75, (0.65 - ratio) * mult));
   }
 
@@ -735,16 +738,39 @@
     return { called: called, willCall: willCall, behind: behind };
   }
 
+  /* 摊牌人数不取整。「后面还会跟几个」本来就是个期望值，硬凑成整数会造成
+     整整一个人的跳变，而少一个对手值好几个胜率点——比范围收紧的影响还大，
+     于是选「一般」反而比「娱乐局」算出更高的胜率。引擎支持小数人头。 */
   function showdownPlayers() {
     var opp = state.players - 1;
     if (!facingBet() || opp <= 1) return state.players;
     var a = actionSplit();
-    return Math.min(opp, Math.max(1, a.called + a.willCall + 1)) + 1;
+    /* 松桌子跟的人确实更多，这条真实效应保留。于是「对手水平」同时改人数和范围，
+       两者方向相反（人多→胜率降，牌烂→胜率升），三档的胜率不保证单调——
+       这不是 bug，是「对手更松」本来就既是坏消息也是好消息。 */
+    var willCall = playersBehind() * callRateBehind();   // 不取整
+    return Math.min(opp, Math.max(1, a.called + willCall + 1)) + 1;
   }
 
   /* 「跟着看牌」那组的范围。没人下注时大家处境一样，不额外放宽；
      有人下注时，没跟注的那些人范围明显更宽。 */
   function wideTopPctl() { return Math.min(1, activePctl() * 2.5); }
+
+  /* 固定随机种子：同一个局面每次都算出同一个数。
+     不然切换「对手水平」时，两次各自 ±0.15% 的抽样抖动会叠在一起，
+     偶尔盖过档位本身的差距，看上去就成了「收紧范围胜率反而更高」。 */
+  function scenarioSeed() {
+    var parts = [state.hero[0], state.hero[1]].concat(state.board)
+      .concat([Math.round(showdownPlayers() * 100), strongOppCount(), filterLen(),
+               Math.round(activePctl() * 1000), Math.round(wideTopPctl() * 1000)]);
+    var h = 0x811c9dc5;
+    for (var i = 0; i < parts.length; i++) {
+      h ^= (parts[i] === null ? 53 : parts[i] | 0) + i * 131;
+      h = (h * 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+
 
   /* 筛范围该用哪个牌面：本街有人下注就用当前的，
      否则用少一张的——大家还没对刚翻开的这张做过决定 */
