@@ -139,19 +139,21 @@
   function callRateBehind(g, levelAware) {
     var mult = levelAware === false ? 1
       : g.oppLevel === 'loose' ? 1.3 : g.oppLevel === 'tight' ? 0.75 : 1;
-    var base;
     if (isPreflop(g)) {
-      /* 加到几个大盲，是翻牌前唯一有意义的尺度。
-         但「多大才算大」因桌而异：娱乐局里加到 5BB 和加到 2.5BB 跟的人差不多，
-         大家看的是「才十来块钱」而不是倍数；老手桌上 4BB 就已经明显劝退了。
-         所以每档给一个「这以下都算小注」的门槛，门槛以内一律按标准开池算。 */
+      /* 加到几个大盲，是翻牌前唯一有意义的尺度——底池此时就是两个盲注，
+         拿它当分母，任何正常加注都会被算成「超池大注、后面全跑」。
+
+         跟注率大致和加注倍数成反比。娱乐局的系数是按实战口径定的
+         （8 人桌 1/2 盲注）：加到 5 全跟、加到 10 还剩 5 人、加到 20 剩 3~4 人。
+         反推出来后面每个人的跟注概率约 2.4 ÷ 加注BB数。
+         一般和老手没有同样的实测数据，按「同一个 2.5 倍开池分别剩 4 人 / 3 人」
+         这个常见口径缩放。 */
+      var A = { loose: 2.4, normal: 0.85, tight: 0.42 };
+      var a = A[g.oppLevel] === undefined ? A.normal : A[g.oppLevel];
       var bb = Math.max(1, (g.call + posted(g)) / BIG_BLIND);
-      var small = g.oppLevel === 'loose' ? 5 : g.oppLevel === 'tight' ? 2.5 : 3;
-      var eff = Math.max(1, bb / small) * 2.5;
-      base = 0.55 / Math.pow(eff, 1.1);
-    } else {
-      base = 0.65 - (g.pot > 0 ? g.call / g.pot : 0.33);
+      return Math.max(0.02, Math.min(0.95, a / bb));
     }
+    var base = 0.65 - (g.pot > 0 ? g.call / g.pot : 0.33);
     return Math.max(0.05, Math.min(0.75, base * mult));
   }
 
@@ -398,8 +400,8 @@
       return mk(a0, amt0, v0, c0,
         '<span class="verdict ' + c0 + '">' + v0 + '</span>'
         + posName(g) + g.players + ' 人桌开<b>前 ' + (open * 100).toFixed(0) + '%</b>，'
-        + '这手牌排<b>前 ' + (pctl * 100).toFixed(0) + '%</b> → ' + act
-        + '<br><span class="caveat">排位按单挑胜率排，多人底池里同花连张的价值要更高</span>');
+        + '这手牌<b>对随机牌前 ' + (pctl * 100).toFixed(0) + '%</b> → ' + act
+        + '<br><span class="caveat">这张表按单挑胜率排，多人底池里同花连张的价值要更高</span>');
     }
 
     // ---- 翻牌前面对加注：查防守范围，不看底池赔率 ----
@@ -432,7 +434,7 @@
         '<span class="verdict ' + c1 + '">' + v1 + '</span>'
         + posName(g) + '面对 ' + (level / BIG_BLIND).toFixed(1) + 'BB 加注：跟<b>前 '
         + (d.call * 100).toFixed(1) + '%</b>／再加<b>前 '
-        + (d.three * 100).toFixed(1) + '%</b>，本手<b>前 '
+        + (d.three * 100).toFixed(1) + '%</b>，本手<b>对加注范围前 '
         + (dp * 100).toFixed(1) + '%</b> → ' + why
         + '<br><span class="caveat">翻牌前按范围判断，不看赔率</span>');
     }

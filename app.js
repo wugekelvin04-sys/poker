@@ -22,7 +22,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v58';
+  var APP_VERSION = 'v59';
 
   var state = {
     hero: [null, null],
