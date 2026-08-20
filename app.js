@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v35';
+  var APP_VERSION = 'v36';
 
   var state = {
     hero: [null, null],
@@ -328,7 +328,7 @@
     clearTimeout(mainLoopTimer);
     if (!window.PokerSim) { $('eqNote').textContent = '计算模块没能加载，刷新试试'; return; }
 
-    if (board.length === 5 && state.players === 2) {
+    if (board.length === 5 && showdownPlayers() === 2) {
       try {
         var ex = PokerSim.enumerateShowdownHeadsUp(hero, board, 1, activePctl());
         lastResult = ex; renderResult(ex, true);
@@ -343,7 +343,7 @@
       if (id !== runId) return;
       try {
         var part = PokerSim.simulate({
-          hero: hero, board: board, players: state.players,
+          hero: hero, board: board, players: showdownPlayers(),
           maxIterations: CHUNK, timeLimitMs: 0,
           oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
           oppBoardTop: board.length >= 3 ? activePctl() : undefined,
@@ -423,7 +423,7 @@
     }, 4000);
 
     worker.postMessage({
-      type: 'run', id: id, hero: hero, board: board, players: state.players,
+      type: 'run', id: id, hero: hero, board: board, players: showdownPlayers(),
       maxIterations: 250000, timeLimitMs: 1600,
       oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
       oppBoardTop: board.length >= 3 ? activePctl() : undefined,
@@ -436,13 +436,19 @@
 
   /* 不指定小数位时自动挑精度：0.02% 不该显示成 0.0%，那看起来像「不可能」。 */
   /* 不是按随机牌算的时候要讲清楚，否则用户会以为胜率算低了 */
+  function showdownNote() {
+    var sp = showdownPlayers();
+    return sp !== state.players
+      ? ' · 按会跟到底的 ' + (sp - 1) + ' 名对手估算（其余多半会弃）' : '';
+  }
+
   function rangeNote() {
     var p = activePctl();
-    if (p >= 1) return '';
+    if (p >= 1) return showdownNote();
     // 翻牌前按起手牌排位筛，翻牌后按「在这个牌面上有多强」筛
-    return boardCount() >= 3
+    return (boardCount() >= 3
       ? ' · 按对手在此牌面前 ' + Math.round(p * 100) + '% 的牌估算'
-      : ' · 按对手前 ' + Math.round(p * 100) + '% 的起手牌估算';
+      : ' · 按对手前 ' + Math.round(p * 100) + '% 的起手牌估算') + showdownNote();
   }
 
   /* 金额变了：只有当对手范围口径也跟着变时才值得重算胜率，
@@ -652,6 +658,16 @@
      才配用当前牌面筛范围。没人下注时，所有人都只是从上一条街跟过来的，
      谁都不该按当前牌面算——包括那个我们本来当成强牌的。 */
   function strongOppCount() { return facingBet() ? 2 : 1; }
+
+  /* 面对下注时，「还剩几人」里多数人会弃牌，不会都跟到摊牌。
+     按全员摊牌算会系统性低估强牌——8 人桌拿葫芦被算成 19.5% 建议弃牌，
+     可你真正要打败的通常只有 1~3 个人。
+     估法：下注那个人肯定跟到底，其余每人按 40% 计。 */
+  function showdownPlayers() {
+    var opp = state.players - 1;
+    if (!facingBet() || opp <= 1) return state.players;
+    return Math.max(1, Math.round(1 + 0.4 * (opp - 1))) + 1;
+  }
 
   /* 「跟着看牌」那组的范围。没人下注时大家处境一样，不额外放宽；
      有人下注时，没跟注的那些人范围明显更宽。 */
