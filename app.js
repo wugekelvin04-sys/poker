@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v31';
+  var APP_VERSION = 'v32';
 
   var state = {
     hero: [null, null],
@@ -632,13 +632,22 @@
   }
 
   /* 这一轮实际该用的对手范围 */
+  /* 下注尺度本身就带信息：小注范围宽（探路、薄价值都可能），
+     大注范围强。要跟/底池 正好就是这个尺度——底池已含他的注，
+     所以半池下注约 0.33，满池约 0.5，1/4 池约 0.2。 */
+  function betSizeFactor() {
+    if (!facingBet() || !(state.pot > 0)) return 1;
+    var ratio = state.call / state.pot;
+    var f = 1.05 - 0.8 * ratio;             // 0.2→0.89  0.33→0.79  0.5→0.65
+    return Math.max(0.65, Math.min(1, f));
+  }
+
   function activePctl() {
     var n = boardCount();
     // 翻牌前且没人加注：大家都还没投钱，按随机牌算
     if (n === 0 && !facingBet()) return 1;
     var base = n >= 3 ? oppLevel().board : oppLevel().pctl;
-    var p = base * (STREET_TIGHTEN[n] || 1);
-    if (facingBet()) p *= 0.8;              // 这条街还敢下注，范围再强一层
+    var p = base * (STREET_TIGHTEN[n] || 1) * betSizeFactor();
     return Math.max(0.05, Math.min(1, p));
   }
 
@@ -665,6 +674,16 @@
      而敢加注的人范围明显强于随机，算出来会系统性偏乐观。
      标准做法是按位置查范围表：大盲价格最好所以防守最宽，
      小盲虽然也投过钱但翻牌后全程没位置，反而要紧。 */
+  /* 加注到多少个大盲，决定这是开池、3-bet 还是 4-bet。
+     标准开池 2.5~3BB，3-bet 9~12BB，4-bet 22BB 以上。
+     范围差别巨大，用同一张防守表会松得离谱——所以按尺度整体缩放。 */
+  function raiseTier(level) {
+    var bb = level / BIG_BLIND;
+    if (bb <= 4.5) return { mult: 1.00, name: '开池加注' };
+    if (bb <= 16)  return { mult: 0.35, name: '3-bet 再加注' };
+    return           { mult: 0.18, name: '4-bet' };
+  }
+
   var DEFEND = {
     early: { three: 0.03, call: 0.10 },
     mid:   { three: 0.04, call: 0.14 },
@@ -831,8 +850,10 @@
     // ---- 翻牌前面对加注：查防守范围，不看底池赔率 ----
     if (state.board.every(function (c) { return c === null; }) && window.PokerPreflop) {
       var dp = PokerPreflop.percentile(state.hero[0], state.hero[1]);
-      var d = DEFEND[state.pos] || DEFEND.mid;
+      var d0 = DEFEND[state.pos] || DEFEND.mid;
       var level = call + posted();               // 他加到了多少
+      var tier = raiseTier(level);
+      var d = { three: d0.three * tier.mult, call: d0.call * tier.mult };
       var v1, c1, why;
       if (dp <= d.three) {
         // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
@@ -847,8 +868,9 @@
         why = '超出' + posName() + '面对加注的防守范围。';
       }
       out.innerHTML = '<span class="verdict ' + c1 + '">' + v1 + '</span>'
-        + posName() + '面对加注：<b>前 ' + (d.call * 100).toFixed(0) + '%</b> 跟、<b>前 '
-        + (d.three * 100).toFixed(0) + '%</b> 再加，这手牌排<b>前 '
+        + posName() + '面对' + tier.name + '（' + (level / BIG_BLIND).toFixed(1) + 'BB）：<b>前 '
+        + (d.call * 100).toFixed(1) + '%</b> 跟、<b>前 '
+        + (d.three * 100).toFixed(1) + '%</b> 再加，这手牌排<b>前 '
         + (dp * 100).toFixed(0) + '%</b> → ' + why
         + '<br><span class="caveat">翻牌前按起手牌范围判断，不用底池赔率——'
         + '赔率是按对手随机牌算的，而敢加注的人范围强得多</span>';
