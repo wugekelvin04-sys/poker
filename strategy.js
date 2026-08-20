@@ -126,12 +126,33 @@
   }
 
   /* 后面还没说话的人里，有多大比例会跟。注下得越大跟的人越少。
-     levelAware !== false 时再按对手水平调整——松的桌子跟的人确实更多。 */
+     levelAware !== false 时再按对手水平调整——松的桌子跟的人确实更多。
+
+     翻牌前后必须用两把不同的尺子。
+     翻牌后「要跟÷底池」是标准的下注尺度，半池 0.33、满池 0.5，够用。
+     翻牌前底池就只有两个盲注（1.5BB），任何正常加注除以它都大于 1，
+     这个公式会一律判成「超池大注，后面的人全跑」，跟注率被压到下限 5%——
+     8 人桌有人开池到 2.5BB，算出来只有 2.3 个人会看到摊牌，
+     于是 J8s 这种牌的胜率被抬到 42%（8 人桌的真实值约 16%）。
+     翻牌前该看的是「他加到了几个大盲」：2.5BB 开池后面大约 20% 会跟，
+     4BB 约 11%，10BB 的 3-bet 约 4%。 */
   function callRateBehind(g, levelAware) {
-    var ratio = g.pot > 0 ? g.call / g.pot : 0.33;
     var mult = levelAware === false ? 1
       : g.oppLevel === 'loose' ? 1.3 : g.oppLevel === 'tight' ? 0.75 : 1;
-    return Math.max(0.05, Math.min(0.75, (0.65 - ratio) * mult));
+    var base;
+    if (isPreflop(g)) {
+      /* 加到几个大盲，是翻牌前唯一有意义的尺度。
+         但「多大才算大」因桌而异：娱乐局里加到 5BB 和加到 2.5BB 跟的人差不多，
+         大家看的是「才十来块钱」而不是倍数；老手桌上 4BB 就已经明显劝退了。
+         所以每档给一个「这以下都算小注」的门槛，门槛以内一律按标准开池算。 */
+      var bb = Math.max(1, (g.call + posted(g)) / BIG_BLIND);
+      var small = g.oppLevel === 'loose' ? 5 : g.oppLevel === 'tight' ? 2.5 : 3;
+      var eff = Math.max(1, bb / small) * 2.5;
+      base = 0.55 / Math.pow(eff, 1.1);
+    } else {
+      base = 0.65 - (g.pot > 0 ? g.call / g.pot : 0.33);
+    }
+    return Math.max(0.05, Math.min(0.75, base * mult));
   }
 
   function actionSplit(g) {
