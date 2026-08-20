@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v42';
+  var APP_VERSION = 'v43';
 
   var state = {
     hero: [null, null],
@@ -732,7 +732,7 @@
   /* 底池档位，以及每档对应的加减步长。步长约等于「到下一档距离的 20%」，
      取整成好按的数：选 200 连按三下加号就是 260，选 500 一下加 100。 */
   var POT_PRESETS = [20, 100, 200, 300, 500];
-  var POT_STEPS   = [5,  20,  20,  50,  100];
+  var POT_STEPS   = [10, 20,  20,  50,  100];
 
   /* 当前数值落在哪一档，就用那一档的步长 */
   function stepFor(val, presets, steps) {
