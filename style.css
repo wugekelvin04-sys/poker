@@ -196,13 +196,15 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .seg.lvl button{font-size:12px}
 
 #potSeg{grid-template-columns:repeat(7,1fr)}
-#callSeg{grid-template-columns:repeat(8,1fr)}
+#callSeg{grid-template-columns:repeat(9,1fr)}
 .seg.money button{font-size:11px;padding:6px 0}
+#callSeg button{font-size:10.5px}
 
 /* 金额行：左边是可直接输入的小框，右边是快捷金额 */
-.money-lbl{flex:0 0 72px;display:flex;align-items:center;gap:5px;
-  background:var(--panel-2);border-radius:8px;padding:0 8px;font-size:11px;color:var(--muted)}
-.money-lbl input{flex:1;min-width:0;width:100%;padding:6px 0;font-size:14px;font-weight:600;
+/* 标签 2 个字 + 输入框，宽度按「三位数 999 也能完整显示」定 */
+.money-lbl{flex:0 0 78px;display:flex;align-items:center;gap:4px;
+  background:var(--panel-2);border-radius:8px;padding:0 7px;font-size:11px;color:var(--muted)}
+.money-lbl input{flex:1 1 auto;min-width:34px;width:34px;padding:6px 0;font-size:14px;font-weight:600;
   text-align:right;font-variant-numeric:tabular-nums;color:var(--txt)}
 
 /* 底池累加键：每有一个人跟注点一下 */
@@ -222,3 +224,6 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 
 /* 坚果牌标签：挂在大数字旁边，不另占一行 */
 .nuts-flag{margin-left:8px;font-size:11px;font-weight:600;color:var(--win)}
+
+/* 金额那两行和上面的人数、位置分开，视觉上是两组不同的东西 */
+.seat-row.money-group{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}

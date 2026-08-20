@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v41';
+  var APP_VERSION = 'v42';
 
   var state = {
     hero: [null, null],
@@ -181,7 +181,7 @@
   }
 
   /* 快捷金额和输入框并存：点按钮直接填，也可以自己敲一个数 */
-  function renderMoney(boxId, key, presets) {
+  function renderMoney(boxId, key, presets, steps) {
     var box = $(boxId);
     box.innerHTML = '';
     presets.forEach(function (v) {
@@ -191,25 +191,42 @@
       b.addEventListener('click', function () {
         state[key] = v;
         $(key).value = v === 0 ? '' : String(v);
-        renderMoney(boxId, key, presets);
+        renderMoney(boxId, key, presets, steps);
         renderBettors(); save(); refresh();
       });
       box.appendChild(b);
     });
     // 底池这一行多一个累加键：每有一个人跟注就点一下，不用心算
-    // 底池这一行两侧加减键，步长跟着当前档位走，方便凑出 260 这种数
-    if (key === 'pot') {
-      var st = potStep();
-      [['−', -st], ['+', st]].forEach(function (pair) {
+    /* 两侧加减键。步长跟当前档位走，并且对齐到步长的整数倍——
+       从 2 按加号会跳到 5、10、15，而不是 7、12 这种别扭的数。 */
+    if (steps) {
+      var st = stepFor(state[key], presets, steps);
+      var cur = state[key];
+      // 梯子只管最低那一小段（0/2/5），超出就走常规步长，
+      // 否则底池 50 按减号会一路跌回 5
+      var ld = key === 'call' ? CALL_LADDER : null;
+      var top = ld ? ld[ld.length - 1] : 0;
+      var up = null, down = null;
+      if (ld && cur < top) {
+        for (var li = 0; li < ld.length; li++) if (cur < ld[li]) { up = ld[li]; break; }
+      }
+      if (ld && cur <= top) {
+        for (var lj = ld.length - 1; lj >= 0; lj--) if (cur > ld[lj]) { down = ld[lj]; break; }
+      }
+      // 直接加减步长，不做对齐——否则 999 的按钮会显示成「−99 +1」
+      if (up === null) up = cur + st;
+      if (down === null) down = cur - st;
+      var noDown = ld ? cur <= 2 : cur - st < 0;
+      [['−', down, noDown], ['+', up, false]].forEach(function (p3) {
         var b = document.createElement('button');
-        b.className = 'add';
-        b.textContent = pair[0] + Math.abs(pair[1]);
-        if (state.pot + pair[1] < 0) b.className += ' off';
+        b.className = 'add' + (p3[2] || p3[1] < 0 ? ' off' : '');
+        b.textContent = p3[0] + Math.abs(p3[1] - cur);
         b.addEventListener('click', function () {
-          state.pot = Math.max(0, Math.round(state.pot + pair[1]));
-          $('pot').value = state.pot ? String(state.pot) : '';
-          renderMoney(boxId, key, presets);
-          save(); refresh();
+          if (p3[2] || p3[1] < 0) return;
+          state[key] = p3[1];
+          $(key).value = state[key] ? String(state[key]) : '';
+          renderMoney(boxId, key, presets, steps);
+          renderBettors(); save(); refresh();
         });
         box.appendChild(b);
       });
@@ -242,8 +259,8 @@
     renderCalled();
     $('calledRow').hidden = !facingBet() || boardCount() === 0;
     renderOppLevel();
-    renderMoney('potSeg', 'pot', POT_PRESETS);
-    renderMoney('callSeg', 'call', CALL_PRESETS);
+    renderMoney('potSeg', 'pot', POT_PRESETS, POT_STEPS);
+    renderMoney('callSeg', 'call', CALL_PRESETS, CALL_STEPS);
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     // 位置常驻可改。它虽然只参与翻牌前的判断，但会随「新一局」自动顺延，
@@ -717,13 +734,21 @@
   var POT_PRESETS = [20, 100, 200, 300, 500];
   var POT_STEPS   = [5,  20,  20,  50,  100];
 
-  function potStep() {
-    var st = POT_STEPS[0];
-    for (var i = 0; i < POT_PRESETS.length; i++)
-      if (state.pot >= POT_PRESETS[i]) st = POT_STEPS[i];
+  /* 当前数值落在哪一档，就用那一档的步长 */
+  function stepFor(val, presets, steps) {
+    var st = steps[0];
+    for (var i = 0; i < presets.length; i++) if (val >= presets[i]) st = steps[i];
     return st;
   }
-  var CALL_PRESETS = [0, 2, 5, 10, 20, 30, 40, 50];
+  /* 要跟也是少放几档 + 可变步长：选 2 连按加号就是 4、6、8（翻牌前的加注），
+     选 20 一步 5，选 50 一步 10。 */
+  var CALL_PRESETS = [0, 2, 5, 10, 20, 50, 100];
+  /* 步长按「跨一档要几步」定：5→10 一步，10→20 两步，20→50 三步，
+     50→100 五步，100 往上每步 20 */
+  var CALL_STEPS   = [5, 5, 5,  5, 10, 10,  20];
+  /* 最低端单独走一小段梯子：0→2→5，之后才进入按档位的步长。
+     2 是一个大盲，5 之后每步 5、50 之后每步 10。 */
+  var CALL_LADDER  = [0, 2, 5];
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
@@ -1102,7 +1127,9 @@
         state[k] = isFinite(v) && v > 0 ? Math.round(v) : 0;
         save();
         if (k !== 'stack') {
-          renderMoney(k + 'Seg', k, k === 'pot' ? POT_PRESETS : CALL_PRESETS);
+          renderMoney(k + 'Seg', k,
+            k === 'pot' ? POT_PRESETS : CALL_PRESETS,
+            k === 'pot' ? POT_STEPS : CALL_STEPS);
         }
         renderBettors(); refresh();
       });
