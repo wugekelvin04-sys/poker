@@ -189,11 +189,38 @@
     return facingBet(g) ? n : Math.max(0, n - 1);
   }
 
+  /* 娱乐局、翻牌前、面对加注时，对手范围随加注大小衰减的实测曲线。
+     按牌桌口径给的四个点（8 人桌 1/2 盲注）：
+       加到 5 → 前 70%（27o 都能跟 5 进来）  加到 10 → 前 50%
+       加到 20 → 前 30%                      加到 50 → 前 15%
+     原来这里走的是 betSizeFactor（要跟 ÷ 底池），翻牌前底池只有两个盲注，
+     算出来的比例永远撞下限，四个尺寸得到的范围一模一样都是 65%。
+     横轴取对数插值：加注每翻一倍，范围收窄的幅度才是恒定的。
+     只有娱乐局有这份实测数据，一般和老手仍按原路走。 */
+  var PRE_LOOSE = [[2.5, 0.70], [5, 0.50], [10, 0.30], [25, 0.15]];
+
+  function preflopLooseRange(bb) {
+    var t = PRE_LOOSE;
+    if (bb <= t[0][0]) return t[0][1];
+    for (var i = 1; i < t.length; i++) {
+      if (bb <= t[i][0]) {
+        var f = Math.log(bb / t[i - 1][0]) / Math.log(t[i][0] / t[i - 1][0]);
+        return t[i - 1][1] + f * (t[i][1] - t[i - 1][1]);
+      }
+    }
+    // 超出最后一个点继续按同样的斜率往下走
+    var last = t[t.length - 1], prev = t[t.length - 2];
+    var k = Math.log(last[1] / prev[1]) / Math.log(last[0] / prev[0]);
+    return Math.max(0.05, last[1] * Math.pow(bb / last[0], k));
+  }
+
   /* 这一轮实际该用的对手范围 */
   function activePctl(g) {
     var n = boardCount(g);
     // 翻牌前且没人加注：大家都还没投钱，按随机牌算
     if (n === 0 && !facingBet(g)) return 1;
+    if (n === 0 && g.oppLevel === 'loose')
+      return preflopLooseRange((g.call + posted(g)) / BIG_BLIND);
     var base = n >= 3 ? oppLevel(g).board : oppLevel(g).pctl;
     var p = base * (STREET_TIGHTEN[n] || 1) * betSizeFactor(g);
     return Math.max(0.05, Math.min(1, p));
@@ -544,6 +571,7 @@
     actionSplit: actionSplit,
     showdownPlayers: showdownPlayers,
     filterLen: filterLen,
+    preflopLooseRange: preflopLooseRange,
     activePctl: activePctl,
     wideTopPctl: wideTopPctl,
     scenarioSeed: scenarioSeed,
