@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v27';
+  var APP_VERSION = 'v29';
 
   var state = {
     hero: [null, null],
@@ -218,7 +218,9 @@
     renderMoney('callSeg', 'call', CALL_PRESETS);
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
-    $('posRow').hidden = !preflop;
+    // 位置常驻可改。它虽然只参与翻牌前的判断，但会随「新一局」自动顺延，
+    // 设错了如果翻牌后不让改，下一局会跟着错下去，一路错到底。
+    $('posRow').hidden = false;
     // 翻牌前没人加注时，开池与否只看起手牌和位置，底池金额用不上
     // 翻牌前完全不看底池，只看位置和起手牌范围
     $('potRow').hidden = preflop;
@@ -642,6 +644,20 @@
     bb:    { three: 0.04, call: 0.40 }
   };
 
+  /* 翻牌后有没有位置。庄位永远最后说话；后位要看庄家还在不在，算中性；
+     盲注和前中位每条街都先说话，位置最差。
+     同一手牌有位置能打出更多价值——这就是胜率兑现率(equity realization)：
+     原始胜率一样，有位置兑现得多，没位置兑现得少。 */
+  function realizeFactor() {
+    if (state.pos === 'btn') return 1.07;
+    if (state.pos === 'late') return 1.00;
+    return 0.93;
+  }
+  function posLabel() {
+    return state.pos === 'btn' ? '你有位置（最后说话）'
+      : state.pos === 'late' ? '' : '你没位置（每条街先说话）';
+  }
+
   /* 我在盲注位已经投进去的钱，面对加注时只需补差额 */
   function posted() {
     return state.pos === 'bb' ? BIG_BLIND : state.pos === 'sb' ? BIG_BLIND / 2 : 0;
@@ -721,6 +737,12 @@
     var eq = lastResult.equity;
     var fair = 1 / state.players;          // 均分时每人应得的份额
     var ratio = eq / fair;
+    // 翻牌后按位置折算能真正打出来的那部分胜率
+    var rf = realizeFactor();
+    var eqR = Math.max(0, Math.min(1, eq * rf));
+    var posNote = posLabel()
+      ? '<br><span class="caveat">' + posLabel() + '，同样的牌能打出的价值不同，已按 '
+        + Math.round(rf * 100) + '% 折算</span>' : '';
 
     // ---- 翻牌前、没人下注：这是开池决策 ----
     // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
@@ -811,11 +833,12 @@
         return;
       }
       var verdict1, cls1, why1;
-      if (ratio >= 2) {
+      var ratioR = eqR / fair;
+      if (ratioR >= 2) {
         verdict1 = actText('下注', potNow * 0.75); cls1 = 'good';
         why1 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
           + pct(fair) + '</b>，下 ¾ 池要价值。';
-      } else if (ratio >= 1.3) {
+      } else if (ratioR >= 1.3) {
         verdict1 = actText('下注', potNow * 0.5); cls1 = 'good';
         why1 = '胜率 <b>' + pct(eq) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
       } else {
@@ -824,7 +847,7 @@
           + pct(fair) + '</b>，先别投钱。';
       }
       out.innerHTML = '<span class="verdict ' + cls1 + '">' + verdict1 + '</span>' + why1
-        + '<br>当前底池 <b>' + chips(potNow) + '</b>。';
+        + '<br>当前底池 <b>' + chips(potNow) + '</b>。' + posNote;
       return;
     }
 
@@ -840,19 +863,21 @@
 
     var required = call / (potNow + call);       // 跟注所需的最低胜率
     var ev = eq * (potNow + call) - call;        // 跟注的期望收益
-    var edge = eq - required;
+    var edge = eqR - required;
     var raiseTo = call + 0.7 * (potNow + call);  // 跟平后再按约 ⅔ 池加
 
     var verdict, cls;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
     else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; }
-    else if (eq >= 1.6 * fair && edge >= 0.15) { verdict = actText('加注到', raiseTo); cls = 'good'; }
+    else if (eqR >= 1.6 * fair && edge >= 0.15) { verdict = actText('加注到', raiseTo); cls = 'good'; }
     else { verdict = actText('跟注', call); cls = 'good'; }
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
       + '底池 <b>' + chips(potNow) + '</b>，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
+      + (rf !== 1 ? '，按位置折算 <b>' + pct(eqR) + '</b>' : '')
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
       + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
+    if (!state.board.every(function (c) { return c === null; })) html += posNote;
     if (state.board.every(function (c) { return c === null; })) {
       // 翻牌前对手敢下注，他的牌一定强于随机牌，而胜率是按随机牌算的
       // 口袋对子翻牌摸中暗三约 11.8%，纯胜率排位低估了这类牌
@@ -886,6 +911,10 @@
     });
     $('tableSize').addEventListener('blur', function () {
       $('tableSize').value = String(state.tableSize);   // 输了非法值就恢复
+    });
+    // 和其他金额框一样，点进来直接全选，打字即覆盖
+    $('tableSize').addEventListener('focus', function () {
+      setTimeout(function () { try { $('tableSize').select(); } catch (e) {} }, 0);
     });
     $('toggleDist').addEventListener('click', function () {
       state.showDist = !state.showDist;
