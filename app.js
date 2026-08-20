@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v38';
+  var APP_VERSION = 'v39';
 
   var state = {
     hero: [null, null],
@@ -30,7 +30,7 @@
     pot: 100,
     call: 0,
     stack: 200,          // 我手上还有多少筹码，建议不能超过它
-    called: 1,           // 已经把这笔钱投进池子的人数（含下注的那个）
+    called: 0,           // 已投钱的人数（含下注者）；0 = 不确定，按下注尺度自己估
     pos: 'mid',          // 我的位置，决定开池范围
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
@@ -55,7 +55,7 @@
         if (typeof s.pot === 'number') state.pot = s.pot;
         if (typeof s.call === 'number') state.call = s.call;
         if (typeof s.stack === 'number') state.stack = s.stack;
-        if (s.called >= 1 && s.called <= 9) state.called = s.called;
+        if (s.called >= 0 && s.called <= 9) state.called = s.called;
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
@@ -219,10 +219,11 @@
     var maxN = Math.max(1, state.players - 1);
     if (state.called > maxN) state.called = maxN;
     box.innerHTML = '';
-    for (var n = 1; n <= maxN; n++) {
+    // 第一个是「?」——不确定就别填，按下注尺度自己估
+    for (var n = 0; n <= maxN; n++) {
       (function (n) {
         var b = document.createElement('button');
-        b.textContent = n;
+        b.textContent = n === 0 ? '?' : n;
         if (n === state.called) b.className = 'on';
         b.addEventListener('click', function () {
           state.called = n; renderCalled(); save(); refresh();
@@ -230,7 +231,7 @@
         box.appendChild(b);
       })(n);
     }
-    box.style.gridTemplateColumns = 'repeat(' + maxN + ',1fr)';
+    box.style.gridTemplateColumns = 'repeat(' + (maxN + 1) + ',1fr)';
   }
 
   function renderBettors() {
@@ -683,14 +684,13 @@
      谁都不该按当前牌面算——包括那个我们本来当成强牌的。 */
   function strongOppCount() { return facingBet() ? 2 : 1; }
 
-  /* 翻牌后的行动顺序：小盲 → 大盲 → 前位 → 中位 → 后位 → 庄位。
-     位置决定了「还剩的人」里有几个排在我后面还没说话。 */
-  var BEHIND_FRAC = { sb: 1, bb: 0.85, early: 0.7, mid: 0.5, late: 0.25, btn: 0 };
+  /* 后面还没说话的人数是精确算得出来的，不用靠位置估：
+     还剩几人 = 我 + 已经跟了的 + 还没说话的 */
+  /* 不确定时按「只有下注那个人投了钱」算，其余的人交给下注尺度去估 */
+  function calledCount() { return state.called > 0 ? state.called : 1; }
 
   function playersBehind() {
-    var opp = state.players - 1;
-    var f = BEHIND_FRAC[state.pos];
-    return Math.round(opp * (f === undefined ? 0.5 : f));
+    return Math.max(0, state.players - 1 - calledCount());
   }
 
   /* 谁会跟到摊牌，得分两拨人算：
@@ -701,13 +701,22 @@
 
      排在我后面的人 —— 还没说话，多数会弃，按 40% 计。只有他们
      还会往池子里加钱。 */
+  /* 后面那些人有多大概率跟：小注跟的人多，大注跑的人多。
+     尺度就是 要跟/底池（底池已含他的注，半池约 0.33、满池约 0.5）。
+     娱乐局的人跟得更凶，老手更容易放掉。 */
+  function callRateBehind() {
+    var ratio = state.pot > 0 ? state.call / state.pot : 0.33;
+    var mult = state.oppLevel === 'loose' ? 1.3 : state.oppLevel === 'tight' ? 0.75 : 1;
+    return Math.max(0.05, Math.min(0.75, (0.65 - ratio) * mult));
+  }
+
   function actionSplit() {
     var opp = state.players - 1;
-    var behind = Math.min(playersBehind(), Math.max(0, opp - state.called));
+    var behind = playersBehind();
     // 已投钱的人由你直接告诉我，比从底池反推准——转牌河牌的底池里
     // 还含着前几条街的钱，反推会把它误判成「很多人跟过」
-    var called = Math.max(0, Math.min(opp, state.called) - 1);   // 减掉下注者本人
-    var willCall = Math.round(behind * 0.4);
+    var called = Math.max(0, Math.min(opp, calledCount()) - 1);   // 减掉下注者本人
+    var willCall = Math.round(behind * callRateBehind());
     return { called: called, willCall: willCall, behind: behind };
   }
 
