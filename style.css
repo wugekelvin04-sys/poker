@@ -197,8 +197,8 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .seg.lvl button{font-size:12px}
 
 #potSeg{grid-template-columns:repeat(6,1fr)}
-#callSeg{grid-template-columns:repeat(8,1fr)}
-.seg.money button{font-size:11.5px;padding:6px 0}
+#callSeg{grid-template-columns:repeat(9,1fr)}
+.seg.money button{font-size:11px;padding:6px 0}
 
 /* 金额行：左边是可直接输入的小框，右边是快捷金额 */
 .money-lbl{flex:0 0 72px;display:flex;align-items:center;gap:5px;

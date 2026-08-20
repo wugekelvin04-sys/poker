@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v17';
+  var APP_VERSION = 'v18';
 
   var state = {
     hero: [null, null],
@@ -218,8 +218,8 @@
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
-    // 翻牌前没人加注时，开池与否只看起手牌和位置，金额用不上
-    var unraised = preflop && state.call <= 0;
+    // 翻牌前没人加注时，开池与否只看起手牌和位置，底池金额用不上
+    var unraised = preflop && state.call <= BIG_BLIND;
     $('potRow').hidden = unraised;
     $('hintRow').hidden = unraised;
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
@@ -583,7 +583,7 @@
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
      赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
   var POT_PRESETS  = [20, 50, 100, 200, 300, 500];
-  var CALL_PRESETS = [0, 5, 10, 15, 20, 25, 30, 50];
+  var CALL_PRESETS = [0, 2, 5, 10, 15, 20, 25, 30, 50];
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
@@ -665,8 +665,9 @@
     // 你赢的是盲注，而全下均分完全没有弃牌率这回事。
     // 正确做法是看这手牌在 169 手起手牌里的强度排位，再对照位置该开多宽。
     // 翻牌前你要跟的就是一个大盲 = 还没人加注；比大盲大就是有人加注了。
+    // 翻牌前你要跟的就是一个大盲 = 还没人加注；比大盲大就是有人加注了
     var preflopUnraised = state.board.every(function (c) { return c === null; })
-      && call <= 0;   // 「没人下」= 翻牌前还没人加注
+      && call <= BIG_BLIND;
     if (preflopUnraised && window.PokerPreflop) {
       var pctl = PokerPreflop.percentile(state.hero[0], state.hero[1]);
 
@@ -789,11 +790,10 @@
         state.hero = [null, null];
         state.board = [null, null, null, null, null];
         if (what === 'new') {
-          // 开新一局：牌和金额清掉；人数恢复成桌上总人数；
-          // 庄家挪一位，我的位置也跟着顺延一格
-          // 新一局：底池清零，需跟注回到一个大盲——这就是每手开始的样子
-          state.pot = 100; state.call = 0;
-          $('pot').value = '100'; $('call').value = '';
+          // 开新一局：底池清零、要跟回到一个大盲，这就是每手开始的样子。
+          // 人数恢复成桌上总人数；庄家挪一位，我的位置也顺延一格。
+          state.pot = 0; state.call = BIG_BLIND;
+          $('pot').value = ''; $('call').value = String(BIG_BLIND);
           state.players = state.tableSize;
           advanceSeat();
           state.hideHero = true;   // 新一局默认盖着，想看点一下牌背
