@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v22';
+  var APP_VERSION = 'v23';
 
   var state = {
     hero: [null, null],
@@ -734,15 +734,24 @@
       }
 
       var open = openRange();
-      var v0, c0, act;
+      // 起手牌排位是按单挑胜率排的，会严重低估同花连张在多人底池的价值：
+      // T9s 单挑排前 35%，8 人桌的胜率却比排前 13% 的 KJo 还高。
+      // 所以娱乐局（人人进池）额外看一眼多人胜率，够格就便宜跟一手。
+      var early = state.pos === 'early' || state.pos === 'mid';
+      var limpBar = early ? 1.25 : 1.10;
+      var v0, c0, act, isRaise = false;
       if (pctl <= open) {
-        v0 = '开池加注'; c0 = 'good'; act = '在范围内';
+        v0 = '开池加注'; c0 = 'good'; act = '在范围内'; isRaise = true;
+      } else if (state.oppLevel === 'loose' && ratio >= limpBar) {
+        v0 = '跟注 ' + chips(call > 0 ? call : BIG_BLIND); c0 = 'good';
+        act = '不够开池，但 ' + state.players + ' 人桌胜率 <b>' + pct(eq)
+          + '</b> 是均分的 <b>' + ratio.toFixed(2) + ' 倍</b>，便宜跟一手看翻牌';
       } else if (pctl <= open * 1.35) {
         v0 = '边缘'; c0 = 'even'; act = '略超范围，桌子松可以开';
       } else {
         v0 = '弃牌 ✕'; c0 = 'bad'; act = '超出范围较多';
       }
-      if (c0 === 'good') {
+      if (isRaise) {
         // 翻牌前没人加注时，「需跟注」填的就是一个大盲，直接拿它算具体筹码，
         // 不用额外配置，也自动适配任何级别的桌子。
         // 标准开池尺度：2.5 倍大盲（小盲位 3 倍），场上每有一个跛入者再加一个大盲，
@@ -754,7 +763,7 @@
       out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>'
         + posName() + state.players + ' 人桌开<b>前 ' + (open * 100).toFixed(0) + '%</b>，'
         + '这手牌排<b>前 ' + (pctl * 100).toFixed(0) + '%</b> → ' + act
-        + '<br><span class="caveat">小对子和同花连张的实战价值高于此排位</span>';
+        + '<br><span class="caveat">排位按单挑胜率排，多人底池里同花连张的价值要更高</span>';
       return;
     }
 

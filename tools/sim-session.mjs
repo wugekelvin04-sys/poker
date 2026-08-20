@@ -36,6 +36,7 @@ const numOpt = (k, dflt) => {
   return o ? (parseFloat(o.split('=')[1]) || dflt) : 0;
 };
 const FREE_BLIND = OPTS.includes('freeblind');   // 留一个对手（大盲）不受范围限制
+const OPEN_MULT = numOpt('open', 1) || 1;   // 开池范围整体放宽/收紧的倍数
 const BLUFF = numOpt('bluff', 0.25);
 const CATCH = numOpt('catch', 0.30);
 const N = 8, BB = 2, SB = 1, BUYIN = 200;
@@ -69,7 +70,8 @@ const OPEN_RANGE = {
   short: { early: 0.16, mid: 0.21, late: 0.28, btn: 0.45, sb: 0.42 },
   full:  { early: 0.11, mid: 0.16, late: 0.24, btn: 0.42, sb: 0.40 }
 };
-const openRange = (pos, n) => (n >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short)[pos] || 0.21;
+const openRange = (pos, n) =>
+  Math.min(0.95, ((n >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short)[pos] || 0.21) * OPEN_MULT);
 
 /* o = { preflop, pos, pctl, potNow, call, playersLeft, equity } */
 function heroPolicy(o) {
