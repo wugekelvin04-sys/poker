@@ -110,15 +110,17 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 /* ---------- 牌型 / 分布 ---------- */
 .made{font-size:17px;font-weight:600;letter-spacing:-.01em;height:20px;line-height:20px;overflow:hidden}
 .made.hidden-hand{color:var(--dim);font-size:15px;font-weight:400}
-/* 这几行都固定高度：内容变化（比如藏牌、牌面提示出现）不该让整块上下跳 */
-.made-hint{font-size:11.5px;color:var(--tie);margin-top:4px;height:17px;line-height:17px;
-  overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* 牌型名和「变大的概率」固定高度：内容变化不该让整块上下跳。
+   提示排在最后，可以换行——整块被右栏钉死在 104px，它往下长
+   只是吃掉本来就空着的余量，下面没有东西会被推动。 */
 .improve{font-size:11.5px;color:var(--muted);margin-top:3px;height:17px;line-height:17px;overflow:hidden}
+.made-hint{font-size:11.5px;color:var(--tie);margin-top:5px;line-height:15px;
+  overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4}
 .improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
 /* 左右分栏：左边文字、右边固定九个牌型。高度由右栏钉死，永远不变 */
 .made-wrap{display:flex;gap:12px;align-items:stretch;height:104px;margin-top:7px;
   padding-top:7px;border-top:1px solid var(--line)}
-.made-left{flex:1;min-width:0}
+.made-left{flex:1;min-width:0;overflow:hidden}
 /* 九种牌型竖排，带比例条，撑满整块的高度 */
 .dist{flex:0 0 176px;display:flex;flex-direction:column;justify-content:space-between}
 .dist-row{display:grid;grid-template-columns:38px 1fr 40px;align-items:center;gap:6px;
