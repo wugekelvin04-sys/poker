@@ -29,7 +29,11 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
   -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
   border-bottom:1px solid var(--line);
 }
-.eq-label{font-size:12px;color:var(--dim);letter-spacing:.08em}
+/* 对手水平挪到胜率标题右边，省掉牌面板里一整行 */
+.eq-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.eq-label{font-size:12px;color:var(--dim);letter-spacing:.08em;flex:0 0 auto}
+.result .seg.lvl{flex:0 1 200px;gap:4px}
+.result .seg.lvl button{padding:4px 0;font-size:11px;border-radius:7px}
 .eq-main{display:flex;align-items:baseline;gap:3px;margin:1px 0 2px}
 #eqValue{transition:opacity .15s;
   font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.02em;
@@ -47,7 +51,7 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 
 /* ---------- 面板 ---------- */
 main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:column;gap:6px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 11px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:7px 11px}
 .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
 .link{color:var(--accent);font-size:13px;padding:4px 2px}
 .link:active{opacity:.5}
@@ -56,7 +60,7 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 /* 手牌 2 张 + 公共牌 5 张排成一行，中间留一道空当隔开。
    第 3 列是纯间隔列，所以每张牌都显式指定列号，不能靠自动排布。 */
 .cards{display:grid;grid-template-columns:repeat(2,1fr) 11px repeat(5,1fr);
-  column-gap:6px;row-gap:4px;align-items:end}
+  column-gap:6px;row-gap:3px;align-items:end;max-width:392px}
 .cards .slot{grid-row:1}
 .cards .slot:nth-child(1){grid-column:1} .cards .slot:nth-child(2){grid-column:2}
 .cards .slot:nth-child(3){grid-column:4} .cards .slot:nth-child(4){grid-column:5}
@@ -75,7 +79,7 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 .slot.filled{background:var(--card-bg);border:1px solid #cdd3dc;color:var(--card-black)}
 .slot.filled.red{color:var(--card-red)}
 .slot.active{box-shadow:0 0 0 2.5px var(--accent)}
-.slot .r{font-size:19px;font-weight:650;line-height:1;letter-spacing:-.02em}
+.slot .r{font-size:18px;font-weight:650;line-height:1;letter-spacing:-.02em}
 .slot .s{font-size:13px;line-height:1.2;margin-top:1px}
 
 /* 隐藏状态：显示成牌背，不影响任何计算 */
@@ -112,15 +116,19 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 .improve{font-size:11.5px;color:var(--muted);margin-top:3px;height:17px;line-height:17px;overflow:hidden}
 .improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
 /* 左右分栏：左边文字、右边固定九个牌型。高度由右栏钉死，永远不变 */
-.made-wrap{display:flex;gap:14px;align-items:flex-start}
+.made-wrap{display:flex;gap:12px;align-items:stretch;height:96px;margin-top:7px;
+  padding-top:7px;border-top:1px solid var(--line)}
 .made-left{flex:1;min-width:0}
-/* 九种牌型排成两列五行，高度只有五行，比竖着排省一半 */
-.dist{flex:0 0 186px;display:grid;grid-template-columns:1fr 1fr;
-  grid-template-rows:repeat(5,1fr);grid-auto-flow:column;column-gap:10px}
-.dist-row{display:flex;justify-content:space-between;font-size:11px;line-height:13px;color:var(--dim)}
-.dist-row .vl{font-variant-numeric:tabular-nums}
-.dist-row.zero{opacity:.35}
+/* 九种牌型竖排，带比例条，撑满整块的高度 */
+.dist{flex:0 0 176px;display:flex;flex-direction:column;justify-content:space-between}
+.dist-row{display:grid;grid-template-columns:38px 1fr 40px;align-items:center;gap:6px;
+  font-size:10.5px;line-height:11px;color:var(--dim)}
+.dist-row .tr{display:block;height:5px;background:var(--panel-2);border-radius:3px;overflow:hidden}
+.dist-row .fl{display:block;height:100%;background:var(--accent);border-radius:3px}
+.dist-row .vl{text-align:right;font-variant-numeric:tabular-nums}
+.dist-row.zero{opacity:.3}
 .dist-row.cur{color:var(--win);font-weight:600}
+.dist-row.cur .fl{background:var(--win)}
 
 /* ---------- 底池赔率 ---------- */
 .odds-inputs{display:flex;gap:10px}
@@ -137,7 +145,7 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 /* 定高：建议的行数会变（有没有加注说明、有没有各种提醒），
    不定高的话整页高度就会跟着跳 */
 .odds-out{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5;
-  height:90px;overflow:hidden}
+  height:100px;overflow:hidden}
 .odds-out .verdict{display:block;font-size:18px;font-weight:650;margin-bottom:4px;letter-spacing:-.01em}
 .odds-out .good{color:var(--win)} .odds-out .bad{color:var(--lose)} .odds-out .even{color:var(--tie)}
 .odds-out b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
@@ -181,6 +189,8 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 }
 
 .hint{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.4}
+/* 内容可空（翻牌后不显示说明），高度固定住防止跳动 */
+#hintRow{min-height:15px}
 .hint b{color:var(--muted);font-weight:600}
 #bettors{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
 
@@ -240,6 +250,10 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 #heroToggle:active{opacity:.6}
 
 /* 新一局放到最下面，拇指最容易够到的位置。每手牌都要点，值得占一整行 */
-.newhand{width:100%;margin-top:2px;padding:7px 0;border-radius:11px;
+.newhand{width:100%;margin-top:1px;padding:6px 0;border-radius:11px;
   background:#1d3350;color:var(--accent);font-size:15px;font-weight:600;letter-spacing:.02em}
 .newhand:active{opacity:.6}
+
+/* 标签本身也是触发区，点一下就加/减一 */
+.seat-lbl.tap{cursor:pointer;-webkit-user-select:none;user-select:none}
+.seat-lbl.tap:active{color:var(--accent)}

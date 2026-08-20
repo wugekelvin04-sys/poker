@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v47';
+  var APP_VERSION = 'v48';
 
   var state = {
     hero: [null, null],
@@ -121,7 +121,7 @@
       note = RANKS[hi] + RANKS[lo] + (ra === rb ? '' : ((a & 3) === (b & 3) ? 's' : 'o'));
     }
     $('heroNotation').textContent = state.hideHero ? '' : note;
-    $('heroToggleHint').textContent = state.hideHero ? '点一下显示' : '点一下可隐藏';
+    $('heroToggleHint').textContent = state.hideHero ? '点牌型显示' : '点牌型可隐藏';
 
     var n = state.board.filter(function (c) { return c !== null; }).length;
     $('streetName').textContent =
@@ -131,6 +131,21 @@
   // ---------- 人数 ----------
   /* 「还剩几人」每手都要改，用按钮；桌上总人数设一次就不动，用小输入框。
      按钮只渲染到总人数为止，不再摆一排点不动的灰按钮。 */
+  /* 这两个动作每手都要按好几次，所以除了按钮，点标签也能触发 */
+  function dropOne() {
+    if (state.players <= 2) return;
+    state.players--;
+    if (state.called > state.players - 1) state.called = state.players - 1;
+    renderPlayers(); renderBettors(); save(); compute();
+  }
+
+  function addOne() {
+    var maxN = Math.max(1, state.players - 1);
+    if (calledCount() >= maxN) return;
+    state.called = calledCount() + 1;
+    renderCalled(); save(); refresh();
+  }
+
   function renderPlayers() {
     $('tableSize').value = String(state.tableSize);
     var box = $('players');
@@ -146,17 +161,12 @@
         box.appendChild(b);
       })(p);
     }
-    // 牌局里人只会越来越少，所以只给一个减号，按一下少一人
+    // 减号放在最左边，紧挨着标签，单手好按
     var minus = document.createElement('button');
     minus.className = 'add' + (state.players <= 2 ? ' off' : '');
     minus.textContent = '−1';
-    minus.addEventListener('click', function () {
-      if (state.players <= 2) return;
-      state.players--;
-      if (state.called > state.players - 1) state.called = state.players - 1;
-      renderPlayers(); renderBettors(); save(); compute();
-    });
-    box.appendChild(minus);
+    minus.addEventListener('click', dropOne);
+    box.insertBefore(minus, box.firstChild);
     box.style.gridTemplateColumns = 'repeat(' + state.tableSize + ',1fr)';
   }
 
@@ -195,26 +205,12 @@
   function renderMoney(boxId, key, presets, steps) {
     var box = $(boxId);
     box.innerHTML = '';
-    presets.forEach(function (v) {
-      var b = document.createElement('button');
-      b.textContent = v;
-      if (v === state[key]) b.className = 'on';
-      b.addEventListener('click', function () {
-        state[key] = v;
-        $(key).value = v === 0 ? '' : String(v);
-        renderMoney(boxId, key, presets, steps);
-        renderBettors(); save(); refresh();
-      });
-      box.appendChild(b);
-    });
-    // 底池这一行多一个累加键：每有一个人跟注就点一下，不用心算
-    /* 两侧加减键。步长跟当前档位走，并且对齐到步长的整数倍——
-       从 2 按加号会跳到 5、10、15，而不是 7、12 这种别扭的数。 */
+
+    /* 加减键放最左边，紧挨着输入框——牌桌上单手操作，左边最好按。
+       步长跟当前档位走；「要跟」最低端还有一小段梯子 0→2→5。 */
     if (steps) {
       var st = stepFor(state[key], presets, steps);
       var cur = state[key];
-      // 梯子只管最低那一小段（0/2/5），超出就走常规步长，
-      // 否则底池 50 按减号会一路跌回 5
       var ld = key === 'call' ? CALL_LADDER : null;
       var top = ld ? ld[ld.length - 1] : 0;
       var up = null, down = null;
@@ -224,7 +220,6 @@
       if (ld && cur <= top) {
         for (var lj = ld.length - 1; lj >= 0; lj--) if (cur > ld[lj]) { down = ld[lj]; break; }
       }
-      // 直接加减步长，不做对齐——否则 999 的按钮会显示成「−99 +1」
       if (up === null) up = cur + st;
       if (down === null) down = cur - st;
       var noDown = ld ? cur <= 2 : cur - st < 0;
@@ -242,6 +237,19 @@
         box.appendChild(b);
       });
     }
+
+    presets.forEach(function (v) {
+      var b = document.createElement('button');
+      b.textContent = v;
+      if (v === state[key]) b.className = 'on';
+      b.addEventListener('click', function () {
+        state[key] = v;
+        $(key).value = v === 0 ? '' : String(v);
+        renderMoney(boxId, key, presets, steps);
+        renderBettors(); save(); refresh();
+      });
+      box.appendChild(b);
+    });
   }
 
   /* 已经把这笔钱投进池子的人数（含下注的那个） */
@@ -262,16 +270,12 @@
         box.appendChild(b);
       })(n);
     }
-    // 一轮里跟注的人只会越来越多，所以只给一个加号
+    // 加号同样放最左边
     var plus = document.createElement('button');
     plus.className = 'add' + (calledCount() >= maxN ? ' off' : '');
     plus.textContent = '+1';
-    plus.addEventListener('click', function () {
-      if (calledCount() >= maxN) return;
-      state.called = calledCount() + 1;
-      renderCalled(); save(); refresh();
-    });
-    box.appendChild(plus);
+    plus.addEventListener('click', addOne);
+    box.insertBefore(plus, box.firstChild);
     box.style.gridTemplateColumns = 'repeat(' + (maxN + 2) + ',1fr)';
   }
 
@@ -297,7 +301,7 @@
     // 不提醒的话很容易把整笔下注额填进「要跟」，把所需胜率抬到离谱。
     $('hintRow').textContent = preflop
       ? '翻牌前只看位置和起手牌，不用填金额'
-      : '原底池 = 本轮下注前的底池，一整轮不用改；本轮下的注自动算';
+      : '';   // 说明去掉，但元素留着占位，避免翻牌前后高度跳动
   }
 
   // ---------- 选牌抽屉 ----------
@@ -623,12 +627,15 @@
       $('improve').innerHTML = '牌型变大的概率 <b>' + pct(improve) + '</b>';
     }
 
+    var max = Math.max.apply(null, r.catCounts) || 1;
     var html = '';
     for (var i = 8; i >= 0; i--) {
       var p = r.catCounts[i];
+      var w = max > 0 ? (p / max * 100) : 0;
       html += '<div class="dist-row' + (markCur && i === curCat ? ' cur' : '')
         + (p < 0.0005 ? ' zero' : '') + '">'
-        + '<span>' + E.CAT_NAMES[i] + '</span>'
+        + '<span class="nm">' + E.CAT_NAMES[i] + '</span>'
+        + '<span class="tr"><span class="fl" style="width:' + w.toFixed(1) + '%"></span></span>'
         + '<span class="vl">' + (p < 0.0005 ? '—' : pct(p, p < 0.01 ? 2 : 1)) + '</span></div>';
     }
     box.innerHTML = html;
@@ -1062,12 +1069,13 @@
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
       + '底池 <b>' + chips(potNow) + '</b>'
       + (state.call > 0
-          ? '（原 ' + chips(state.pot) + ' + ' + (paidNow + extraCallers) + '×' + chips(state.call) + '）'
+          ? '＝' + chips(state.pot) + '+' + (paidNow + extraCallers) + '×' + chips(state.call)
           : '')
-      + '，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
-      + (rf !== 1 ? '，按位置折算 <b>' + pct(eqR) + '</b>' : '')
-      + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
-      + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
+      + ' · 需 <b>' + pct(required) + '</b><br>'
+      + '你有 <b>' + pct(eq) + '</b>'
+      + (rf !== 1 ? ' → 按位置 <b>' + pct(eqR) + '</b>' : '')
+      + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）'
+      + ' · 期望 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
     if (!state.board.every(function (c) { return c === null; })) html += posNote;
     if (state.board.every(function (c) { return c === null; })) {
       // 翻牌前对手敢下注，他的牌一定强于随机牌，而胜率是按随机牌算的
@@ -1091,6 +1099,8 @@
       var b = e.target.closest('.pick');
       if (b) pickCard(parseInt(b.dataset.card, 10));
     });
+    $('playersLbl').addEventListener('click', dropOne);
+    $('calledLbl').addEventListener('click', addOne);
     $('tableSize').addEventListener('input', function () {
       var v = parseInt($('tableSize').value, 10);
       if (!(v >= 2 && v <= 10)) return;
