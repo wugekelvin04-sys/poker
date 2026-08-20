@@ -94,6 +94,8 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 
 /* ---------- 人数分段 ---------- */
 .seat-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+/* 作者样式的 display 会盖掉浏览器默认的 [hidden]{display:none}，必须显式写 */
+.seat-row[hidden]{display:none}
 .seat-lbl{flex:0 0 62px;font-size:11.5px;color:var(--muted);line-height:1.25}
 .seat-lbl em{display:block;font-style:normal;color:var(--dim);font-size:9.5px}
 .seg{flex:1;display:grid;grid-template-columns:repeat(9,1fr);gap:4px}
@@ -210,4 +212,8 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .seg button.add{background:#1d3350;color:var(--accent);font-weight:600}
 .seg button.add.off{opacity:.3;pointer-events:none}
 
-#stackSeg{grid-template-columns:repeat(6,1fr)}
+/* 筹码放在标题栏：不是每次决策都改的值，不值得占一整行 */
+.hdr-money{display:flex;align-items:center;gap:6px;background:var(--panel-2);
+  border-radius:7px;padding:3px 9px;font-size:11px;color:var(--muted)}
+.hdr-money input{width:52px;padding:2px 0;font-size:14px;font-weight:600;
+  text-align:right;font-variant-numeric:tabular-nums;color:var(--txt)}

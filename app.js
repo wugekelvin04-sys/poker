@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v24';
+  var APP_VERSION = 'v25';
 
   var state = {
     hero: [null, null],
@@ -232,7 +232,6 @@
     renderOppLevel();
     renderMoney('potSeg', 'pot', POT_PRESETS);
     renderMoney('callSeg', 'call', CALL_PRESETS);
-    renderMoney('stackSeg', 'stack', STACK_PRESETS);
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
@@ -624,7 +623,6 @@
      赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
   var POT_PRESETS  = [10, 20, 50, 100, 200, 300];
   var CALL_PRESETS = [0, 2, 5, 10, 20, 30, 40, 50];
-  var STACK_PRESETS = [50, 100, 200, 300, 500, 1000];
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
@@ -930,8 +928,9 @@
         var v = parseFloat(el.value);
         state[k] = isFinite(v) && v > 0 ? Math.round(v) : 0;
         save();
-        renderMoney(k + 'Seg', k,
-          k === 'pot' ? POT_PRESETS : k === 'call' ? CALL_PRESETS : STACK_PRESETS);
+        if (k !== 'stack') {
+          renderMoney(k + 'Seg', k, k === 'pot' ? POT_PRESETS : CALL_PRESETS);
+        }
         renderBettors(); refresh();
       });
       // 点进来光标会落在数字中间，很难改。直接全选，打字即覆盖。
