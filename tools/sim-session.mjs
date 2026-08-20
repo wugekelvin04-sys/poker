@@ -16,7 +16,16 @@ const root = path.dirname(fileURLToPath(import.meta.url)) + '/..';
 vm.runInThisContext(fs.readFileSync(root + '/engine.js', 'utf8'));
 vm.runInThisContext(fs.readFileSync(root + '/sim.js', 'utf8'));
 vm.runInThisContext(fs.readFileSync(root + '/preflop.js', 'utf8'));
+vm.runInThisContext(fs.readFileSync(root + '/strategy.js', 'utf8'));
 const E = globalThis.PokerEngine, S = globalThis.PokerSim, PF = globalThis.PokerPreflop;
+const ST = globalThis.PokerStrategy;
+
+/* 英雄在 App 里选的「对手水平」。真实使用时是用户自己挑的，
+   所以要能单独设——匹配和不匹配两种情况的结果都值得看。 */
+const HERO_LEVEL = process.env.HERO_LEVEL || 'normal';
+/* 每次翻牌后决策要现算一遍胜率。手数多的时候这是主要开销，
+   精度和速度的折中，可用环境变量调。 */
+const POSTFLOP_ITERS = parseInt(process.env.POSTFLOP_ITERS || '900', 10);
 
 const HANDS = parseInt(process.argv[2] || '100000', 10);
 const OPP_KIND = process.argv[3] || 'amateur';
@@ -29,6 +38,7 @@ const RANGE_OPT = OPTS.find(o => o.startsWith('range'));
 const RANGE_PCT = RANGE_OPT ? (parseFloat(RANGE_OPT.split('=')[1]) || 0.30) : 0;
 const USE_RANGE = !!RANGE_OPT;
 const FOLD_MARGINAL = OPTS.includes('edgy');
+const MARGINAL_FOLD = FOLD_MARGINAL;
 /* bluff=P  该过牌时以 P 的频率半诈唬下注（只在单挑、且手上有点底子时）
    catch=Q  该弃牌但只差一点时，以 Q 的频率抓偷鸡跟一手（只在单挑） */
 const numOpt = (k, dflt) => {
@@ -73,36 +83,57 @@ const OPEN_RANGE = {
 const openRange = (pos, n) =>
   Math.min(0.95, ((n >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short)[pos] || 0.21) * OPEN_MULT);
 
-/* o = { preflop, pos, pctl, potNow, call, playersLeft, equity } */
-function heroPolicy(o) {
-  const eq = o.equity, fair = 1 / o.playersLeft, ratio = eq / fair;
-  const heads = o.playersLeft === 2;   // 只剩一个对手。多人底池里诈唬基本是送钱
+/* 英雄的决策：直接调 strategy.js，和手机上跑的是同一份代码。
+ *
+ * 关键在于「喂什么」。App 拿到的不是上帝视角，而是用户在牌桌上估出来的几个数：
+ *   底池   = 本轮下注之前的数额（一整轮不变，好记）
+ *   要跟   = 我需要补多少
+ *   已跟几人 = 这一轮已经投过钱的对手数（含下注那个人）
+ *   还剩几人 = 这手牌里还没弃牌的总人数（含我）
+ * 所以这里也照这个口径喂，量出来的才是「用户用这个 App 能得到的结果」，
+ * 而不是「有上帝视角时这套公式能有多准」。
+ */
+function heroDecision(p, ctx) {
+  const board5 = [null, null, null, null, null];
+  for (let i = 0; i < ctx.boardShown.length; i++) board5[i] = ctx.boardShown[i];
 
-  if (o.preflop && o.call <= 0) {
-    if (o.pos === 'bb') return { act: 'check' };
-    const open = openRange(o.pos, N);
-    if (o.pctl <= open) return { act: 'raise', to: (o.pos === 'sb' ? 3 : 2.5) * BB };
-    return { act: 'fold' };                       // 含「边缘」，app 的默认读法是弃
+  const g = {
+    hero: p.cards, board: board5,
+    players: ctx.alive,            // 还剩几人（含我）
+    tableSize: N,
+    pos: ctx.pos,
+    oppLevel: HERO_LEVEL,
+    pot: ctx.potBefore,            // 本轮下注之前的底池
+    call: ctx.toCall,
+    called: ctx.calledThisRound,   // 本轮已投钱的对手数（含下注者）
+    stack: p.stack
+  };
+
+  const opt = ST.simOptions(g);
+  const bd = ctx.boardShown;
+  let eq;
+  if (bd.length === 0) {
+    // 翻牌前用预算好的表，几十万手才跑得动
+    eq = preflopEq(p.cards[0], p.cards[1], Math.max(1, Math.round(opt.players) - 1));
+  } else {
+    eq = S.simulate({
+      hero: p.cards, board: bd,
+      players: opt.players, seed: opt.seed,
+      maxIterations: POSTFLOP_ITERS, timeLimitMs: 0,
+      oppMaxPctl: opt.oppMaxPctl, oppBoardTop: opt.oppBoardTop,
+      oppStrong: opt.oppStrong, oppWideTop: opt.oppWideTop,
+      oppFilterLen: opt.oppFilterLen
+    }).equity;
   }
-  if (o.call <= 0) {
-    if (ratio >= 2)   return { act: 'bet', amount: o.potNow * 0.75 };
-    if (ratio >= 1.3) return { act: 'bet', amount: o.potNow * 0.5 };
-    // 半诈唬：单挑、手上还有点底子（能听牌或有摊牌价值）时才偷
-    if (BLUFF && heads && !o.preflop && eq >= 0.20 && rnd() < BLUFF)
-      return { act: 'bet', amount: o.potNow * 0.5 };
-    return { act: 'check' };
-  }
-  const required = o.call / (o.potNow + o.call);
-  const edge = eq - required;
-  if (edge < -0.02) {
-    // 抓偷鸡：只差一点、又是单挑，对手有可能在偷，按一定频率跟一手
-    if (CATCH && heads && !o.preflop && edge >= -0.10 && rnd() < CATCH) return { act: 'call' };
-    return { act: 'fold' };
-  }
-  if (edge < 0.02)  return FOLD_MARGINAL ? { act: 'fold' } : { act: 'call' };
-  if (eq >= 1.6 * fair && edge >= 0.15)
-    return { act: 'raise', to: o.call + 0.7 * (o.potNow + o.call) };
-  return { act: 'call' };
+
+  const d = ST.decide(g, { equity: eq });
+  // decide 的动作名翻译成下注引擎认识的
+  if (d.act === 'raise' || d.act === 'bet') return { act: 'raise', to: d.amount };
+  if (d.act === 'call') return { act: 'call' };
+  if (d.act === 'check') return ctx.toCall > 0 ? { act: 'fold' } : { act: 'check' };
+  if (d.act === 'marginal') return MARGINAL_FOLD ? { act: 'fold' } : { act: 'call' };
+  if (d.act === 'need-input') return ctx.toCall > 0 ? { act: 'call' } : { act: 'check' };
+  return { act: 'fold' };
 }
 
 // ---------------- 对手 ----------------
@@ -312,18 +343,16 @@ function playHand(btn) {
           let d;
           const useAlgo = MIRROR || (p.hero ? HERO_KIND === 'algo' : false);
           if (useAlgo) {
-            const nOpp = Math.max(oppLeft, 1);
-            const bd = board.slice(0, 2 + street);
-            // 面对下注时按收窄的范围算；无人下注时对手范围本就宽，仍按随机牌
-            const eq = (USE_RANGE && toCall > 0)
-              ? eqVsRange(p.cards, street === 0 ? [] : bd, nOpp, RANGE_PCT, 700)
-              : (street === 0
-                  ? preflopEq(p.cards[0], p.cards[1], nOpp)
-                  : postflopEq(p.cards, bd, nOpp));
-            d = heroPolicy({
-              preflop: street === 0, pos: posOf(seat, btn),
-              pctl: PF.percentile(p.cards[0], p.cards[1]),
-              potNow, call: toCall, playersLeft: oppLeft + 1, equity: eq
+            /* 按用户在 App 里会填的口径整理局面：
+               底池是「本轮下注之前」的，已跟几人是这一轮投过钱的对手数。 */
+            const roundSum = players.reduce((a, x) => a + x.roundPut, 0);
+            d = heroDecision(p, {
+              boardShown: street === 0 ? [] : board.slice(0, 2 + street),
+              alive: alive().length,
+              pos: posOf(seat, btn),
+              potBefore: potNow - roundSum,
+              toCall,
+              calledThisRound: players.filter(x => x !== p && !x.folded && x.roundPut > 0).length
             });
             if (p.hero && street === 0 && d.act !== 'fold' && d.act !== 'check') heroPlayed = true;
           } else {

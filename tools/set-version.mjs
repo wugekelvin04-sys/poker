@@ -9,7 +9,7 @@ const root = path.dirname(fileURLToPath(import.meta.url)) + '/..';
 const v = process.argv[2];
 if (!/^v\d+$/.test(v || '')) { console.error('用法: node tools/set-version.mjs v7'); process.exit(1); }
 
-const ASSETS = ['style.css', 'engine.js', 'sim.js', 'preflop.js', 'app.js', 'manifest.webmanifest'];
+const ASSETS = ['style.css', 'engine.js', 'sim.js', 'preflop.js', 'strategy.js', 'app.js', 'manifest.webmanifest'];
 
 let html = fs.readFileSync(root + '/index.html', 'utf8');
 for (const a of ASSETS) {

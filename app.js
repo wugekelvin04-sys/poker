@@ -1,6 +1,10 @@
 /* 界面逻辑。计算全部交给 worker.js，主线程只负责渲染。 */
 (function () {
   'use strict';
+  /* 决策逻辑全在 strategy.js 里，这里只做转发。必须在最前面拿到引用：
+     下面好几个常量（BIG_BLIND 等）在模块初始化时就要读它。 */
+  var ST = window.PokerStrategy;
+
   var E = window.PokerEngine;
   var RANKS = E.RANK_CHARS, SUITS = E.SUIT_SYMBOLS;
   var SUIT_NAMES = ['黑桃', '红桃', '方块', '梅花'];
@@ -18,7 +22,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v54';
+  var APP_VERSION = 'v55';
 
   var state = {
     hero: [null, null],
@@ -555,15 +559,7 @@
      还会因为长度变化导致切换人数时整页抖动 */
   function setBusy(on) { $('eqValue').style.opacity = on ? '0.4' : '1'; }
 
-  function pct(x, d) {
-    if (d !== undefined) return (x * 100).toFixed(d) + '%';
-    var v = x * 100;
-    if (v === 0) return '0%';
-    if (v >= 1) return v.toFixed(1) + '%';
-    if (v >= 0.1) return v.toFixed(2) + '%';
-    if (v >= 0.01) return v.toFixed(3) + '%';
-    return '<0.01%';
-  }
+  function pct(x, d) { return ST.pct(x, d); }
 
   /* 顶部那个大数字，同上但不带百分号 */
   function eqNum(x) {
@@ -675,7 +671,7 @@
      那样庄位会数出小盲大盲两个人，被判成很紧的范围，而实际庄位开得最宽。 */
   /* 一个大盲多少筹码。桌子级别变了就改这一处。
      翻牌前「需跟注」等于它 = 没人加注；大于它 = 有人加注了。 */
-  var BIG_BLIND = 2;
+  var BIG_BLIND = ST.BIG_BLIND;
 
   /* 对手水平 → 只从最强的前多少比例起手牌里给对手发牌。
      对手敢投钱说明范围强于随机，但娱乐局的人是真的什么牌都玩，
@@ -684,138 +680,43 @@
      pctl  —— 翻牌前按起手牌排位筛，前 30% 就是 88+/AJ+ 这类牌
      board —— 翻牌后按牌面契合度筛，前 30% 在河牌上意味着「最弱也有一对 Q」，
               直接套用会把对手范围收得离谱。实测这块合理区间在 55%~85%。 */
-  var OPP_LEVELS = [
-    { k: 'loose',  n: '娱乐局', pctl: 1,    board: 0.85 },
-    { k: 'normal', n: '一般',   pctl: 0.55, board: 0.70 },
-    { k: 'tight',  n: '老手',   pctl: 0.30, board: 0.55 }
-  ];
-  function oppLevel() {
-    for (var i = 0; i < OPP_LEVELS.length; i++)
-      if (OPP_LEVELS[i].k === state.oppLevel) return OPP_LEVELS[i];
-    return OPP_LEVELS[0];
-  }
+  var OPP_LEVELS = ST.OPP_LEVELS;
+  function oppLevel() { return ST.oppLevel(state); }
   function oppPctl() { return oppLevel().pctl; }
 
   /* 有人往池子里投钱要我跟，说明他这条街还愿意加码 */
-  function facingBet() {
-    var preflop = state.board.every(function (c) { return c === null; });
-    return preflop ? state.call > BIG_BLIND : state.call > 0;
-  }
+  /* 决策逻辑全在 strategy.js 里，这里只做转发：
+     UI 代码照常调用这些名字，参数里那个 state 由转发层补上。
+     以前 app 和模拟器各写一份、注释写着「镜像」，结果悄悄漂移了好几个版本，
+     模拟器量出来的盈亏根本不是这个 App 的策略。现在只有一份。 */
 
-  /* 每多打一条街，还留在牌里的人范围就更强一层——他已经为前面每条街
-     都付过钱了，跟这条街有没有下注无关。翻牌前没人加注是唯一的例外：
-     那时谁都还没做选择，范围确实接近随机。 */
-  // 翻牌后已经改按牌面契合度筛，本身就够狠了，逐街收窄的幅度要小得多
-  var STREET_TIGHTEN = { 0: 1, 3: 1, 4: 0.92, 5: 0.85 };
+  var STREET_TIGHTEN = ST.STREET_TIGHTEN;
+  var OPEN_RANGE = ST.OPEN_RANGE;
+  var DEFEND = ST.DEFEND;
+  var TIER_EXP = ST.TIER_EXP;
 
-  function boardCount() {
-    return state.board.filter(function (c) { return c !== null; }).length;
-  }
-
-  /* 这一轮实际该用的对手范围 */
-  /* 下注尺度本身就带信息：小注范围宽（探路、薄价值都可能），
-     大注范围强。要跟/底池 正好就是这个尺度——底池已含他的注，
-     所以半池下注约 0.33，满池约 0.5，1/4 池约 0.2。 */
-  function betSizeFactor() {
-    if (!facingBet() || !(state.pot > 0)) return 1;
-    var ratio = state.call / state.pot;
-    var f = 1.05 - 0.8 * ratio;             // 0.2→0.89  0.33→0.79  0.5→0.65
-    return Math.max(0.65, Math.min(1, f));
-  }
-
-  /* 只有「这条街主动下注」的人才真的看着当前牌面做过决定，
-     才配用当前牌面筛范围。没人下注时，所有人都只是从上一条街跟过来的，
-     谁都不该按当前牌面算——包括那个我们本来当成强牌的。 */
-  function strongOppCount() { return facingBet() ? 2 : 1; }
-
-  /* 后面还没说话的人数是精确算得出来的，不用靠位置估：
-     还剩几人 = 我 + 已经跟了的 + 还没说话的 */
-  /* 不确定时按「只有下注那个人投了钱」算，其余的人交给下注尺度去估 */
-  function calledCount() { return state.called > 0 ? state.called : 1; }
-
-  function playersBehind() {
-    return Math.max(0, state.players - 1 - calledCount());
-  }
-
-  /* 谁会跟到摊牌，得分两拨人算：
-
-     排在我前面还没弃牌的人 —— 他们已经跟过这笔钱了，钱在底池里。
-     但底池大小反过来约束了这个数：底池 100、要跟 50 就只装得下约两笔，
-     不可能是七个人都跟了（那样底池至少 350）。
-
-     排在我后面的人 —— 还没说话，多数会弃，按 40% 计。只有他们
-     还会往池子里加钱。 */
-  /* 后面那些人有多大概率跟：小注跟的人多，大注跑的人多。
-     尺度就是 要跟/底池（底池已含他的注，半池约 0.33、满池约 0.5）。
-     娱乐局的人跟得更凶，老手更容易放掉。 */
-  /* 后面还没说话的人里，有多大比例会跟。注下得越大跟的人越少。
-     levelAware=true 时再按对手水平调整——松的桌子跟的人确实更多。 */
-  function callRateBehind(levelAware) {
-    var ratio = state.pot > 0 ? state.call / state.pot : 0.33;
-    var mult = levelAware === false ? 1
-      : state.oppLevel === 'loose' ? 1.3 : state.oppLevel === 'tight' ? 0.75 : 1;
-    return Math.max(0.05, Math.min(0.75, (0.65 - ratio) * mult));
-  }
-
-  function actionSplit() {
-    var opp = state.players - 1;
-    var behind = playersBehind();
-    // 已投钱的人由你直接告诉我，比从底池反推准——转牌河牌的底池里
-    // 还含着前几条街的钱，反推会把它误判成「很多人跟过」
-    var called = Math.max(0, Math.min(opp, calledCount()) - 1);   // 减掉下注者本人
-    var willCall = Math.round(behind * callRateBehind());
-    return { called: called, willCall: willCall, behind: behind };
-  }
-
-  /* 摊牌人数不取整。「后面还会跟几个」本来就是个期望值，硬凑成整数会造成
-     整整一个人的跳变，而少一个对手值好几个胜率点——比范围收紧的影响还大，
-     于是选「一般」反而比「娱乐局」算出更高的胜率。引擎支持小数人头。 */
-  function showdownPlayers() {
-    var opp = state.players - 1;
-    if (!facingBet() || opp <= 1) return state.players;
-    var a = actionSplit();
-    /* 松桌子跟的人确实更多，这条真实效应保留。于是「对手水平」同时改人数和范围，
-       两者方向相反（人多→胜率降，牌烂→胜率升），三档的胜率不保证单调——
-       这不是 bug，是「对手更松」本来就既是坏消息也是好消息。 */
-    var willCall = playersBehind() * callRateBehind();   // 不取整
-    return Math.min(opp, Math.max(1, a.called + willCall + 1)) + 1;
-  }
-
-  /* 「跟着看牌」那组的范围。没人下注时大家处境一样，不额外放宽；
-     有人下注时，没跟注的那些人范围明显更宽。 */
-  function wideTopPctl() { return Math.min(1, activePctl() * 2.5); }
-
-  /* 固定随机种子：同一个局面每次都算出同一个数。
-     不然切换「对手水平」时，两次各自 ±0.15% 的抽样抖动会叠在一起，
-     偶尔盖过档位本身的差距，看上去就成了「收紧范围胜率反而更高」。 */
-  function scenarioSeed() {
-    var parts = [state.hero[0], state.hero[1]].concat(state.board)
-      .concat([Math.round(showdownPlayers() * 100), strongOppCount(), filterLen(),
-               Math.round(activePctl() * 1000), Math.round(wideTopPctl() * 1000)]);
-    var h = 0x811c9dc5;
-    for (var i = 0; i < parts.length; i++) {
-      h ^= (parts[i] === null ? 53 : parts[i] | 0) + i * 131;
-      h = (h * 0x01000193) >>> 0;
-    }
-    return h >>> 0;
-  }
-
-
-  /* 筛范围该用哪个牌面：本街有人下注就用当前的，
-     否则用少一张的——大家还没对刚翻开的这张做过决定 */
-  function filterLen() {
-    var n = boardCount();
-    return facingBet() ? n : Math.max(0, n - 1);
-  }
-
-  function activePctl() {
-    var n = boardCount();
-    // 翻牌前且没人加注：大家都还没投钱，按随机牌算
-    if (n === 0 && !facingBet()) return 1;
-    var base = n >= 3 ? oppLevel().board : oppLevel().pctl;
-    var p = base * (STREET_TIGHTEN[n] || 1) * betSizeFactor();
-    return Math.max(0.05, Math.min(1, p));
-  }
+  function facingBet()        { return ST.facingBet(state); }
+  function boardCount()       { return ST.boardCount(state); }
+  function betSizeFactor()    { return ST.betSizeFactor(state); }
+  function strongOppCount()   { return ST.strongOppCount(state); }
+  function calledCount()      { return ST.calledCount(state); }
+  function playersBehind()    { return ST.playersBehind(state); }
+  function callRateBehind(la) { return ST.callRateBehind(state, la); }
+  function actionSplit()      { return ST.actionSplit(state); }
+  function showdownPlayers()  { return ST.showdownPlayers(state); }
+  function wideTopPctl()      { return ST.wideTopPctl(state); }
+  function scenarioSeed()     { return ST.scenarioSeed(state); }
+  function filterLen()        { return ST.filterLen(state); }
+  function activePctl()       { return ST.activePctl(state); }
+  function realizeFactor()    { return ST.realizeFactor(state); }
+  function posted()           { return ST.posted(state); }
+  function openRange()        { return ST.openRange(state); }
+  function posName()          { return ST.posName(state); }
+  function raiseTier(level)   { return ST.raiseTier(state, level); }
+  function chips(x)           { return ST.chips(x); }
+  function betSize(x)         { return ST.betSize(x); }
+  function sized(x)           { return ST.sized(state, x); }
+  function actText(verb, x)   { return ST.actText(state, verb, x); }
 
   /* 底池和跟注都用快捷金额，牌桌上没法数清物理筹码，估个量级就够用。
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
@@ -849,75 +750,7 @@
   function callSteps()   { return preflopNow() ? CALL_STEPS_PRE   : CALL_STEPS_POST; }
   function callLadder()  { return preflopNow() ? CALL_LADDER_PRE  : CALL_LADDER_POST; }
 
-  var POS = [
-    { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
-    { k: 'btn', n: '庄位' }, { k: 'sb', n: '小盲' }, { k: 'bb', n: '大盲' }
-  ];
-
-  /* 标准开池范围（RFI），对照常见图表。人多的桌前面几个位置要更紧。
-     盲注是另一回事：已经投过钱、且翻牌后位置最差，单独处理。 */
-  var OPEN_RANGE = {
-    short: { early: 0.16, mid: 0.21, late: 0.28, btn: 0.45, sb: 0.42 },  // 6 人及以下
-    full:  { early: 0.11, mid: 0.16, late: 0.24, btn: 0.42, sb: 0.40 }   // 7 人及以上
-  };
-
-  /* 翻牌前面对加注时的防守范围（前百分之几）。
-     翻牌前不该用底池赔率判断——赔率是按对手拿随机牌算的，
-     而敢加注的人范围明显强于随机，算出来会系统性偏乐观。
-     标准做法是按位置查范围表：大盲价格最好所以防守最宽，
-     小盲虽然也投过钱但翻牌后全程没位置，反而要紧。 */
-  /* 加注到多少个大盲，决定这是开池、3-bet 还是 4-bet。
-     标准开池 2.5~3BB，3-bet 9~12BB，4-bet 22BB 以上。
-     范围差别巨大，用同一张防守表会松得离谱——所以按尺度整体缩放。 */
-  /* 加得越大，说明对手范围越强，我方防守就得越紧。
-     但「大注 = 强牌」这个推断有多可靠，完全取决于对手是谁：
-     娱乐局的人拿 A9o 也能加到 15BB，加注尺寸几乎不携带信息；
-     老手加到 15BB 那基本就是 AA/KK。所以收紧的力度按档位走——
-     指数越大收得越狠。注越大，档位造成的差别也越大，这是对的。 */
-  var TIER_EXP = { loose: 0.40, normal: 0.70, tight: 0.90 };
-
-  function raiseTier(level) {
-    var bb = level / BIG_BLIND;
-    // 连续曲线，不是三个硬台阶——否则加到 4.4BB 和 4.6BB 会掉进完全
-    // 不同的档，而同一档内加多少又完全不影响判断。
-    var exp = TIER_EXP[state.oppLevel] === undefined ? 0.70 : TIER_EXP[state.oppLevel];
-    var mult = bb <= 2.5 ? 1 : Math.pow(2.5 / bb, exp);
-    var name = bb <= 4.5 ? '开池加注' : bb <= 16 ? '3-bet 再加注' : '4-bet';
-    return { mult: Math.max(0.05, Math.min(1, mult)), name: name };
-  }
-
-  var DEFEND = {
-    early: { three: 0.03, call: 0.10 },
-    mid:   { three: 0.04, call: 0.14 },
-    late:  { three: 0.05, call: 0.20 },
-    btn:   { three: 0.06, call: 0.25 },
-    sb:    { three: 0.04, call: 0.18 },
-    bb:    { three: 0.04, call: 0.40 }
-  };
-
-  /* 翻牌后有没有位置。庄位永远最后说话；后位要看庄家还在不在，算中性；
-     盲注和前中位每条街都先说话，位置最差。
-     同一手牌有位置能打出更多价值——这就是胜率兑现率(equity realization)：
-     原始胜率一样，有位置兑现得多，没位置兑现得少。 */
-  function realizeFactor() {
-    if (state.pos === 'btn') return 1.07;
-    if (state.pos === 'late') return 1.00;
-    return 0.93;
-  }
-  function posLabel() {
-    return state.pos === 'btn' ? '你有位置（最后说话）'
-      : state.pos === 'late' ? '' : '你没位置（每条街先说话）';
-  }
-
-  /* 我在盲注位已经投进去的钱，面对加注时只需补差额 */
-  function posted() {
-    return state.pos === 'bb' ? BIG_BLIND : state.pos === 'sb' ? BIG_BLIND / 2 : 0;
-  }
-
-  function openRange() {
-    var t = state.players >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short;
-    return t[state.pos] || t.mid;
-  }
+  var POS = ST.POS;
 
   /* 庄家每手顺时针挪一位，我的位置也跟着走一格。座位环必须按桌上总人数生成，
      环长 = 总人数，不能写死。顺序（沿轮转方向）：
@@ -955,36 +788,6 @@
     state.pos = cyc[i];
   }
 
-  function posName() {
-    for (var i = 0; i < POS.length; i++) if (POS[i].k === state.pos) return POS[i].n;
-    return '中位';
-  }
-
-  /* 筹码都是整数，任何金额一律取整，别报出 7.5 这种数 */
-  function chips(x) { return String(Math.round(x)); }
-
-  /* 加注、下注的数额取整到好按的数上：牌桌上推的是实体筹码，
-     「加注到 146」没人推得出来，实际也就推 150。
-     50 以下取 5 的倍数，50 以上取 10 的倍数。
-     跟注不能这么取——跟多少是对手定的，必须给准数。 */
-  function betSize(x) {
-    var v = x < 50 ? Math.round(x / 5) * 5 : Math.round(x / 10) * 10;
-    return Math.max(5, v);
-  }
-
-  /* 任何建议都不能超过手上的筹码，超了就是全下 */
-  function sized(x) {
-    var st = state.stack;
-    if (st > 0 && x >= st) return { text: '全下 ' + chips(st), allin: true };
-    return { text: chips(x), allin: false };
-  }
-  /* 下注/加注类的判词，全下时不再说「加注到」 */
-  function actText(verb, x) {
-    var r = sized(x);
-    return r.allin ? r.text : verb + ' ' + r.text;
-  }
-
-
   /* 盖着牌的时候，行动建议只留结论。中间那几行（你有多少胜率、期望多少）
      全是从手牌推出来的，旁边的人扫一眼就知道你强不强。
      在出口处统一裁剪，所有分支都覆盖得到，以后新加分支也不会漏。
@@ -1000,187 +803,7 @@
   function renderOddsFull() {
     var out = $('oddsOut');
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
-
-    /* 底池填的是「本轮下注之前」的数额——一整轮里它都不变，牌桌上好记。
-       本轮投进去的钱由 App 自己乘出来：
-         实际底池 = 原始底池 + 已跟人数 × 要跟 + 后面预计跟的人 × 要跟
-       后半段必须算，否则就成了「把后面的人当对手却不算他们的钱」的双重悲观。 */
-    var split = facingBet() ? actionSplit() : { called: 0, willCall: 0 };
-    var paidNow = facingBet() ? calledCount() : 0;      // 本轮已经投钱的人数（含下注者）
-    var extraCallers = split.willCall;                  // 后面预计还会跟的人数
-    var potNow = state.pot + (paidNow + extraCallers) * state.call;
-    // 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手，
-    // 赔率要按实际投进去的钱算
-    var call = state.stack > 0 ? Math.min(state.call, state.stack) : state.call;
-
-    var eq = lastResult.equity;
-    var fair = 1 / state.players;          // 均分时每人应得的份额
-    var ratio = eq / fair;
-    // 翻牌后按位置折算能真正打出来的那部分胜率
-    var rf = realizeFactor();
-    var eqR = Math.max(0, Math.min(1, eq * rf));
-    var posNote = '';
-
-    // ---- 翻牌前、没人下注：这是开池决策 ----
-    // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
-    // 你赢的是盲注，而全下均分完全没有弃牌率这回事。
-    // 正确做法是看这手牌在 169 手起手牌里的强度排位，再对照位置该开多宽。
-    // 翻牌前你要跟的就是一个大盲 = 还没人加注；比大盲大就是有人加注了。
-    // 翻牌前你要跟的就是一个大盲 = 还没人加注；比大盲大就是有人加注了
-    var preflopUnraised = state.board.every(function (c) { return c === null; })
-      && call <= BIG_BLIND;
-    if (preflopUnraised && window.PokerPreflop) {
-      var pctl = PokerPreflop.percentile(state.hero[0], state.hero[1]);
-
-      // 大盲位没人加注，就是免费看翻牌，不存在开不开池的问题
-      if (state.pos === 'bb') {
-        out.innerHTML = '<span class="verdict even">过牌</span>'
-          + '大盲没人加注 = 免费看翻牌，没理由再投钱。这手牌排<b>前 '
-          + (pctl * 100).toFixed(0) + '%</b>。';
-        return;
-      }
-
-      var open = openRange();
-      // 起手牌排位是按单挑胜率排的，会严重低估同花连张在多人底池的价值：
-      // T9s 单挑排前 35%，8 人桌的胜率却比排前 13% 的 KJo 还高。
-      // 所以只要不是硬桌子，都额外看一眼多人胜率，够格就便宜跟一手；
-      // 只有「老手」档禁掉——对好对手跛入是送钱。
-      var early = state.pos === 'early' || state.pos === 'mid';
-      var limpBar = early ? 1.25 : 1.10;
-      var v0, c0, act, isRaise = false;
-      if (pctl <= open) {
-        v0 = '开池加注'; c0 = 'good'; act = '在范围内'; isRaise = true;
-      } else if (state.oppLevel !== 'tight' && ratio >= limpBar) {
-        v0 = actText('跟注', call > 0 ? call : BIG_BLIND); c0 = 'good';
-        act = '不够开池，但 ' + state.players + ' 人桌胜率 <b>' + (pct(eq))
-          + '</b> 是均分的 <b>' + ratio.toFixed(2) + ' 倍</b>，便宜跟一手看翻牌';
-      } else if (pctl <= open * 1.35) {
-        v0 = '边缘'; c0 = 'even'; act = '略超范围，桌子松可以开';
-      } else {
-        v0 = '弃牌 ✕'; c0 = 'bad'; act = '超出范围较多';
-      }
-      if (isRaise) {
-        // 翻牌前没人加注时，「需跟注」填的就是一个大盲，直接拿它算具体筹码，
-        // 不用额外配置，也自动适配任何级别的桌子。
-        // 标准开池尺度：2.5 倍大盲（小盲位 3 倍），场上每有一个跛入者再加一个大盲，
-        // 而跛入进来的钱正好就是「原底池」。
-        var to = (state.pos === 'sb' ? 3 : 2.5) * BIG_BLIND;
-        v0 = actText('开池加注到', betSize(to));
-        act += '，' + (state.pos === 'sb' ? '3' : '2.5') + ' 倍大盲';
-      }
-      out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>'
-        + posName() + state.players + ' 人桌开<b>前 ' + (open * 100).toFixed(0) + '%</b>，'
-        + '这手牌排<b>前 ' + (pctl * 100).toFixed(0) + '%</b> → ' + act
-        + '<br><span class="caveat">排位按单挑胜率排，多人底池里同花连张的价值要更高</span>';
-      return;
-    }
-
-    // ---- 翻牌前面对加注：查防守范围，不看底池赔率 ----
-    if (state.board.every(function (c) { return c === null; }) && window.PokerPreflop) {
-      // 面对加注要用「对加注范围的胜率」排位，不能用「对随机牌」那张。
-      // 77 对随机牌 66% 排前 4.2%，对前 20% 范围只有 49% 排前 7.1%——
-      // 用错表会把它排在 AKo 前面，面对 3-bet、4-bet 都建议跟注。
-      var dp = PokerPreflop.vsRaise
-        ? PokerPreflop.vsRaise(state.hero[0], state.hero[1])
-        : PokerPreflop.percentile(state.hero[0], state.hero[1]);
-      var d0 = DEFEND[state.pos] || DEFEND.mid;
-      var level = call + posted();               // 他加到了多少
-      var tier = raiseTier(level);
-      var d = { three: d0.three * tier.mult, call: d0.call * tier.mult };
-      var v1, c1, why;
-      if (dp <= d.three) {
-        // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
-        var ip = state.pos === 'btn' || state.pos === 'late';
-        v1 = actText('再加注到', betSize(level * (ip ? 3 : 4))); c1 = 'good';
-        why = '够强，值得反打' + (ip ? '（有位置 3 倍）' : '（没位置 4 倍）') + '。';
-      } else if (dp <= d.call) {
-        v1 = actText('跟注', call); c1 = 'good';
-        why = '在防守范围内，跟一手。';
-      } else {
-        v1 = '弃牌 ✕'; c1 = 'bad';
-        why = '超出防守范围。';
-      }
-      out.innerHTML = '<span class="verdict ' + c1 + '">' + v1 + '</span>'
-        + posName() + '面对 ' + (level / BIG_BLIND).toFixed(1) + 'BB 加注：跟<b>前 '
-        + (d.call * 100).toFixed(1) + '%</b>／再加<b>前 '
-        + (d.three * 100).toFixed(1) + '%</b>，本手<b>前 '
-        + ((dp * 100).toFixed(1) + '%') + '</b> → ' + why
-        + '<br><span class="caveat">翻牌前按范围判断，不看赔率</span>';
-      return;
-    }
-
-    // ---- 没人下注 ----
-    if (call <= 0) {
-      if (potNow <= 0) {
-        out.innerHTML = '<span class="verdict even">缺少底池</span>'
-          + '翻牌后没有底池就算不出该下多少，填一下原底池。';
-        return;
-      }
-      var verdict1, cls1, why1;
-      var ratioR = eqR / fair;
-      if (ratioR >= 2) {
-        verdict1 = actText('下注', betSize(potNow * 0.75)); cls1 = 'good';
-        why1 = '胜率 <b>' + (pct(eq)) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
-          + pct(fair) + '</b>，下 ¾ 池要价值。';
-      } else if (ratioR >= 1.3) {
-        verdict1 = actText('下注', betSize(potNow * 0.5)); cls1 = 'good';
-        why1 = '胜率 <b>' + (pct(eq)) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
-      } else {
-        verdict1 = '过牌'; cls1 = 'even';
-        why1 = '胜率 <b>' + (pct(eq)) + '</b> 没到 ' + state.players + ' 人桌均分的 <b>'
-          + pct(fair) + '</b>，先别投钱。';
-      }
-      out.innerHTML = '<span class="verdict ' + cls1 + '">' + verdict1 + '</span>' + why1
-        + '<br>当前底池 <b>' + chips(potNow) + '</b>。' + posNote;
-      return;
-    }
-
-    // ---- 有人下注 ----
-    // 底池是 0 却有人下注，说明底池没填。这时算出来必然是「需要 100% 胜率」，
-    // 数学上没错但毫无用处，直接说清楚要填什么。
-    if (potNow <= 0) {
-      out.innerHTML = '<span class="verdict even">底池没填</span>'
-        + '有人下注，底池就不会是 0。填一下中间现在一共多少'
-        + '（含盲注和他下的注），否则赔率算不出来。';
-      return;
-    }
-
-    var required = call / (potNow + call);       // 跟注所需的最低胜率
-    var ev = eq * (potNow + call) - call;        // 跟注的期望收益
-    var edge = eqR - required;
-    var raiseTo = call + 0.7 * (potNow + call);  // 跟平后再按约 ⅔ 池加
-
-    var verdict, cls;
-    if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
-    else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; }
-    else if (eqR >= 1.6 * fair && edge >= 0.15) { verdict = actText('加注到', betSize(raiseTo)); cls = 'good'; }
-    else { verdict = actText('跟注', call); cls = 'good'; }
-
-    var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
-      + '底池 <b>' + chips(potNow) + '</b>'
-      + (state.call > 0
-          ? '＝' + chips(state.pot) + '+' + (paidNow + extraCallers) + '×' + chips(state.call)
-          : '')
-      + ' · 需 <b>' + pct(required) + '</b><br>'
-      + '你有 <b>' + (pct(eq)) + '</b>'
-      + (rf !== 1 ? ' → 按位置 <b>' + (pct(eqR)) + '</b>' : '')
-      + '（' + (edge >= 0 ? '多 ' : '差 ') + (pct(Math.abs(edge))) + '）'
-      + ' · 期望 <b>' + ((ev >= 0 ? '+' : '−') + chips(Math.abs(ev))) + '</b>';
-    if (!state.board.every(function (c) { return c === null; })) html += posNote;
-    if (state.board.every(function (c) { return c === null; })) {
-      // 翻牌前对手敢下注，他的牌一定强于随机牌，而胜率是按随机牌算的
-      // 口袋对子翻牌摸中暗三约 11.8%，纯胜率排位低估了这类牌
-      var h0 = state.hero[0], h1 = state.hero[1];
-      if (h0 !== null && h1 !== null && (h0 >> 2) === (h1 >> 2) && verdict.indexOf('弃牌') === 0) {
-        html += '<br><span class="caveat">口袋对子：翻牌 12% 中暗三，筹码够 15 倍可摸</span>';
-      }
-      // 大盲已经投过钱，防守价格比别人好
-      if (state.pos === 'bb' && call > 0) {
-        html += '<br><span class="caveat">大盲防守可更宽，但翻牌后无位置</span>';
-      }
-      html += '<br><span class="caveat">对手敢下注，实战胜率比这更低</span>';
-    }
-    out.innerHTML = html;
+    out.innerHTML = ST.decide(state, lastResult).html;
   }
 
   // ---------- 事件绑定 ----------
@@ -1323,4 +946,20 @@
       location.replace(location.pathname + '?u=' + Date.now());
     });
   });
+
+  /* 开发用回归钩子：直接喂状态和一个合成的模拟结果，拿回建议的 HTML。
+     用来在重构决策逻辑前后逐条比对输出，确认行为完全一致。
+     只在本机调试时挂出来，线上（GitHub Pages）碰不到。 */
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    window.__testDecide = function (patch, eq) {
+      for (var k in patch) state[k] = patch[k];
+      var cc = new Array(9);
+      for (var i = 0; i < 9; i++) cc[i] = i === 1 ? 0.6 : 0.05;
+      lastResult = { equity: eq, winRate: eq * 0.95, tieRate: eq * 0.05, loseRate: 1 - eq,
+        n: 250000, lose: 1000, margin: 0.002, catCounts: cc, exact: false, elapsed: 1 };
+      renderOddsFull();
+      return $('oddsOut').innerHTML;
+    };
+  }
+
 })();
