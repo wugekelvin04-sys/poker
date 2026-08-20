@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v43';
+  var APP_VERSION = 'v44';
 
   var state = {
     hero: [null, null],
@@ -146,7 +146,18 @@
         box.appendChild(b);
       })(p);
     }
-    box.style.gridTemplateColumns = 'repeat(' + (state.tableSize - 1) + ',1fr)';
+    // 牌局里人只会越来越少，所以只给一个减号，按一下少一人
+    var minus = document.createElement('button');
+    minus.className = 'add' + (state.players <= 2 ? ' off' : '');
+    minus.textContent = '−1';
+    minus.addEventListener('click', function () {
+      if (state.players <= 2) return;
+      state.players--;
+      if (state.called > state.players - 1) state.called = state.players - 1;
+      renderPlayers(); renderBettors(); save(); compute();
+    });
+    box.appendChild(minus);
+    box.style.gridTemplateColumns = 'repeat(' + state.tableSize + ',1fr)';
   }
 
   function renderPos() {
@@ -251,7 +262,17 @@
         box.appendChild(b);
       })(n);
     }
-    box.style.gridTemplateColumns = 'repeat(' + (maxN + 1) + ',1fr)';
+    // 一轮里跟注的人只会越来越多，所以只给一个加号
+    var plus = document.createElement('button');
+    plus.className = 'add' + (calledCount() >= maxN ? ' off' : '');
+    plus.textContent = '+1';
+    plus.addEventListener('click', function () {
+      if (calledCount() >= maxN) return;
+      state.called = calledCount() + 1;
+      renderCalled(); save(); refresh();
+    });
+    box.appendChild(plus);
+    box.style.gridTemplateColumns = 'repeat(' + (maxN + 2) + ',1fr)';
   }
 
   function renderBettors() {
