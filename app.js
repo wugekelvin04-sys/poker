@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v50';
+  var APP_VERSION = 'v51';
 
   var state = {
     hero: [null, null],
@@ -857,13 +857,19 @@
   /* 加注到多少个大盲，决定这是开池、3-bet 还是 4-bet。
      标准开池 2.5~3BB，3-bet 9~12BB，4-bet 22BB 以上。
      范围差别巨大，用同一张防守表会松得离谱——所以按尺度整体缩放。 */
+  /* 加得越大，说明对手范围越强，我方防守就得越紧。
+     但「大注 = 强牌」这个推断有多可靠，完全取决于对手是谁：
+     娱乐局的人拿 A9o 也能加到 15BB，加注尺寸几乎不携带信息；
+     老手加到 15BB 那基本就是 AA/KK。所以收紧的力度按档位走——
+     指数越大收得越狠。注越大，档位造成的差别也越大，这是对的。 */
+  var TIER_EXP = { loose: 0.40, normal: 0.70, tight: 0.90 };
+
   function raiseTier(level) {
     var bb = level / BIG_BLIND;
     // 连续曲线，不是三个硬台阶——否则加到 4.4BB 和 4.6BB 会掉进完全
     // 不同的档，而同一档内加多少又完全不影响判断。
-    // 以标准开池 2.5BB 为基准，加得越大防守越紧：
-    //   3BB→0.87  4BB→0.70  6BB→0.52  10BB→0.35  25BB→0.18
-    var mult = bb <= 2.5 ? 1 : Math.pow(2.5 / bb, 0.76);
+    var exp = TIER_EXP[state.oppLevel] === undefined ? 0.70 : TIER_EXP[state.oppLevel];
+    var mult = bb <= 2.5 ? 1 : Math.pow(2.5 / bb, exp);
     var name = bb <= 4.5 ? '开池加注' : bb <= 16 ? '3-bet 再加注' : '4-bet';
     return { mult: Math.max(0.05, Math.min(1, mult)), name: name };
   }
@@ -1065,7 +1071,7 @@
         + posName() + '面对 ' + (level / BIG_BLIND).toFixed(1) + 'BB 加注：跟<b>前 '
         + (d.call * 100).toFixed(1) + '%</b>／再加<b>前 '
         + (d.three * 100).toFixed(1) + '%</b>，本手<b>前 '
-        + (dp * 100).toFixed(0) + '%</b> → ' + why
+        + (dp * 100).toFixed(1) + '%</b> → ' + why
         + '<br><span class="caveat">翻牌前按范围判断，不看赔率</span>';
       return;
     }
