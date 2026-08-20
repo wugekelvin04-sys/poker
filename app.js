@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v21';
+  var APP_VERSION = 'v22';
 
   var state = {
     hero: [null, null],
@@ -216,7 +216,7 @@
       if (state.call <= 0) add.className += ' off';
       add.addEventListener('click', function () {
         if (state.call <= 0) return;
-        state.pot = Math.round((state.pot + state.call) * 10) / 10;
+        state.pot = Math.round(state.pot + state.call);
         $('pot').value = String(state.pot);
         renderMoney(boxId, key, presets);
         save(); refresh();
@@ -699,10 +699,8 @@
     return '中位';
   }
 
-  /* 筹码金额取整：大额不带小数，小额留一位 */
-  function chips(x) {
-    return x >= 20 ? String(Math.round(x)) : String(Math.round(x * 10) / 10);
-  }
+  /* 筹码都是整数，任何金额一律取整，别报出 7.5 这种数 */
+  function chips(x) { return String(Math.round(x)); }
 
 
   function renderOdds() {
@@ -903,7 +901,7 @@
       el.value = state[k] ? String(state[k]) : '';
       el.addEventListener('input', function () {
         var v = parseFloat(el.value);
-        state[k] = isFinite(v) && v > 0 ? v : 0;
+        state[k] = isFinite(v) && v > 0 ? Math.round(v) : 0;
         save();
         renderMoney(k === 'pot' ? 'potSeg' : 'callSeg', k,
           k === 'pot' ? POT_PRESETS : CALL_PRESETS);
