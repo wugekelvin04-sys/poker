@@ -117,8 +117,15 @@
     // 翻牌后改按牌面契合度筛，比起手牌排位准得多
     var boardTop = o.oppBoardTop;
     var byBoard = boardTop !== undefined && boardTop < 1 && board.length >= 3 && oppCount > 0;
-    var cutoff = byBoard ? boardCutoff(deck, board, boardTop) : 0;
     if (byBoard) ranged = false;
+    /* 只有主动投钱的那一两个人范围才真的强；剩下的人是跟着看牌的。
+       把窄范围无差别套到每个对手身上，人越多复合得越离谱——8 人桌等于
+       假设 7 个人同时拿着前 36% 的牌，那件事的概率是 0.36^7 ≈ 0.08%。 */
+    var strongN = o.oppStrong === undefined ? oppCount : Math.min(o.oppStrong, oppCount);
+    var wideTop = Math.min(1, (byBoard ? boardTop : maxPctl) * 2.5);
+    var cutoff = byBoard ? boardCutoff(deck, board, boardTop) : 0;
+    var cutoffWide = (byBoard && strongN < oppCount)
+      ? boardCutoff(deck, board, wideTop) : cutoff;
     var comm = new Int32Array(5);
     var h7 = new Int32Array(7), o7 = new Int32Array(7);
     for (var i = 0; i < board.length; i++) comm[i] = board[i];
@@ -142,11 +149,12 @@
           var pos2 = need;
           for (var op2 = 0; op2 < oppCount; op2++) {
             var a1 = pos2, a2 = pos2 + 1;
+            var cut2 = op2 < strongN ? cutoff : cutoffWide;
             for (var t2 = 0; t2 < 80; t2++) {
               a1 = pos2 + ((rng() * (deckLen - pos2)) | 0);
               a2 = pos2 + ((rng() * (deckLen - pos2)) | 0);
               if (a1 === a2) continue;
-              if (boardStrength(deck[a1], deck[a2], board, board.length) >= cutoff) break;
+              if (boardStrength(deck[a1], deck[a2], board, board.length) >= cut2) break;
             }
             var q1 = deck[a1]; deck[a1] = deck[pos2]; deck[pos2] = q1;
             if (a2 === pos2) a2 = a1;
@@ -163,11 +171,12 @@
           var pos = need;
           for (var op = 0; op < oppCount; op++) {
             var i1 = pos, i2 = pos + 1;
+            var mp2 = op < strongN ? maxPctl : wideTop;
             for (var tr = 0; tr < 60; tr++) {
               i1 = pos + ((rng() * (deckLen - pos)) | 0);
               i2 = pos + ((rng() * (deckLen - pos)) | 0);
               if (i1 === i2) continue;
-              if (PFL.percentile(deck[i1], deck[i2]) <= maxPctl) break;
+              if (PFL.percentile(deck[i1], deck[i2]) <= mp2) break;
             }
             var s1 = deck[i1]; deck[i1] = deck[pos]; deck[pos] = s1;
             if (i2 === pos) i2 = i1;                      // 刚才那次交换把它挪走了

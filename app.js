@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v33';
+  var APP_VERSION = 'v34';
 
   var state = {
     hero: [null, null],
@@ -346,7 +346,8 @@
           hero: hero, board: board, players: state.players,
           maxIterations: CHUNK, timeLimitMs: 0,
           oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
-          oppBoardTop: board.length >= 3 ? activePctl() : undefined
+          oppBoardTop: board.length >= 3 ? activePctl() : undefined,
+          oppStrong: strongOppCount()
         });
         acc = acc ? mergeResults(acc, part) : part;
       } catch (err) {
@@ -423,7 +424,8 @@
       type: 'run', id: id, hero: hero, board: board, players: state.players,
       maxIterations: 250000, timeLimitMs: 1600,
       oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
-      oppBoardTop: board.length >= 3 ? activePctl() : undefined
+      oppBoardTop: board.length >= 3 ? activePctl() : undefined,
+      oppStrong: strongOppCount()
     });
     lastPctl = activePctl();
   }
@@ -641,6 +643,10 @@
     var f = 1.05 - 0.8 * ratio;             // 0.2→0.89  0.33→0.79  0.5→0.65
     return Math.max(0.65, Math.min(1, f));
   }
+
+  /* 有几个对手该按「强范围」处理。主动下注的那个肯定算，
+     再算一个可能跟注的；其余的人是跟着看牌，不该假设他们也很强。 */
+  function strongOppCount() { return facingBet() ? 2 : 1; }
 
   function activePctl() {
     var n = boardCount();

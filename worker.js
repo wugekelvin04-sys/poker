@@ -22,6 +22,7 @@ self.onmessage = function (e) {
         timeLimitMs: msg.timeLimitMs,
         oppMaxPctl: msg.oppMaxPctl,
         oppBoardTop: msg.oppBoardTop,
+        oppStrong: msg.oppStrong,
         onProgress: function (p) {
           self.postMessage({ type: 'progress', id: id, result: p });
         }
