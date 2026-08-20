@@ -46,9 +46,9 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 .dot-w{background:var(--win)} .dot-t{background:var(--tie)} .dot-l{background:var(--lose)}
 
 /* ---------- 面板 ---------- */
-main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:column;gap:7px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
-.phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:column;gap:6px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+.phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
 .link{color:var(--accent);font-size:13px;padding:4px 2px}
 .link:active{opacity:.5}
 
@@ -90,7 +90,7 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 
 
 /* ---------- 人数分段 ---------- */
-.seat-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+.seat-row{display:flex;align-items:center;gap:8px;margin-top:5px}
 /* 作者样式的 display 会盖掉浏览器默认的 [hidden]{display:none}，必须显式写 */
 .seat-row[hidden]{display:none}
 .seat-lbl{flex:0 0 62px;font-size:11.5px;color:var(--muted);line-height:1.25}
@@ -104,22 +104,23 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .seg button.on{background:var(--accent);color:#fff;font-weight:600}
 
 /* ---------- 牌型 / 分布 ---------- */
-.made{font-size:18px;font-weight:600;letter-spacing:-.01em}
+.made{font-size:17px;font-weight:600;letter-spacing:-.01em;height:22px;line-height:22px;overflow:hidden}
 .made.hidden-hand{color:var(--dim);font-size:15px;font-weight:400}
-.made-hint{font-size:11.5px;color:var(--tie);margin-top:4px;line-height:1.45}
-.improve{font-size:11.5px;color:var(--muted);margin-top:3px}
+/* 这几行都固定高度：内容变化（比如藏牌、牌面提示出现）不该让整块上下跳 */
+.made-hint{font-size:11.5px;color:var(--tie);margin-top:4px;height:17px;line-height:17px;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.improve{font-size:11.5px;color:var(--muted);margin-top:3px;height:17px;line-height:17px;overflow:hidden}
 .improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
-.dist{margin-top:10px;display:flex;flex-direction:column;gap:5px}
-/* 收起时容器是空的，别让外边距继续占高度 */
-.dist:empty{display:none}
-.dist-row{display:grid;grid-template-columns:56px 1fr 52px;align-items:center;gap:8px;font-size:11.5px}
-.dist-row .nm{color:var(--muted)}
-.dist-row .tr{display:block;height:6px;background:var(--panel-2);border-radius:3px;overflow:hidden}
-/* 必须是块级，行内元素的 height 不生效 */
-.dist-row .fl{display:block;height:100%;min-width:2px;background:var(--accent);border-radius:3px;transition:width .3s}
-.dist-row.cur .fl{background:var(--win)}
-.dist-row.cur .nm{color:var(--txt)}
-.dist-row .vl{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+/* 左右分栏：左边文字、右边固定九个牌型。高度由右栏钉死，永远不变 */
+.made-wrap{display:flex;gap:14px;align-items:flex-start}
+.made-left{flex:1;min-width:0}
+/* 九种牌型排成两列五行，高度只有五行，比竖着排省一半 */
+.dist{flex:0 0 186px;display:grid;grid-template-columns:1fr 1fr;
+  grid-template-rows:repeat(5,1fr);grid-auto-flow:column;column-gap:10px}
+.dist-row{display:flex;justify-content:space-between;font-size:11px;line-height:13.5px;color:var(--dim)}
+.dist-row .vl{font-variant-numeric:tabular-nums}
+.dist-row.zero{opacity:.35}
+.dist-row.cur{color:var(--win);font-weight:600}
 
 /* ---------- 底池赔率 ---------- */
 .odds-inputs{display:flex;gap:10px}
@@ -133,7 +134,10 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .quick{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:7px}
 .quick button{padding:8px 1px;border-radius:7px;background:var(--panel-2);font-size:11.5px;color:var(--muted);white-space:nowrap}
 .quick button:active{transform:scale(.94)}
-.odds-out{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5}
+/* 定高：建议的行数会变（有没有加注说明、有没有各种提醒），
+   不定高的话整页高度就会跟着跳 */
+.odds-out{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5;
+  height:106px;overflow:hidden}
 .odds-out .verdict{display:block;font-size:18px;font-weight:650;margin-bottom:4px;letter-spacing:-.01em}
 .odds-out .good{color:var(--win)} .odds-out .bad{color:var(--lose)} .odds-out .even{color:var(--tie)}
 .odds-out b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
@@ -227,3 +231,6 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 
 /* 金额那两行和上面的人数、位置分开，视觉上是两组不同的东西 */
 .seat-row.money-group{margin-top:9px;padding-top:9px;border-top:1px solid var(--line)}
+
+/* 用不上的行置灰但保留占位，操作区位置不会跳 */
+.seat-row.dim{opacity:.3;pointer-events:none}

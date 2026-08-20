@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v45';
+  var APP_VERSION = 'v46';
 
   var state = {
     hero: [null, null],
@@ -278,7 +278,9 @@
   function renderBettors() {
     renderPos();
     renderCalled();
-    $('calledRow').hidden = !facingBet() || boardCount() === 0;
+    /* 用不到的行置灰而不是隐藏——隐藏会让整个操作区上下移动，
+       手指每次都得重新找位置。 */
+    $('calledRow').classList.toggle('dim', !facingBet() || boardCount() === 0);
     renderOppLevel();
     renderMoney('potSeg', 'pot', POT_PRESETS, POT_STEPS);
     renderMoney('callSeg', 'call', CALL_PRESETS, CALL_STEPS);
@@ -288,9 +290,8 @@
     // 设错了如果翻牌后不让改，下一局会跟着错下去，一路错到底。
     $('posRow').hidden = false;
     // 翻牌前没人加注时，开池与否只看起手牌和位置，底池金额用不上
-    // 翻牌前完全不看底池，只看位置和起手牌范围
-    $('potRow').hidden = preflop;
-    $('hintRow').hidden = preflop;
+    // 翻牌前完全不看底池，只看位置和起手牌范围；置灰保留占位
+    $('potRow').classList.toggle('dim', preflop);
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
     // 盲注位已经投过钱，只需补差额，而且那笔钱已经算在底池里了。
     // 不提醒的话很容易把整笔下注额填进「要跟」，把所需胜率抬到离谱。
@@ -349,7 +350,25 @@
     for (var k = 0; k < SLOTS.length; k++) {
       if (k !== active && slotCard(k) === c) return;
     }
+    var boardBefore = boardCount();
     setSlotCard(active, c);
+    /* 新的一条街开始了：上一轮的下注该结账，「要跟」也要归零重新来。 */
+    var nowCount = boardCount();
+    if (nowCount > boardBefore && nowCount >= 3) {
+      if (boardBefore < 3) {
+        // 翻牌前的底池只有盲注那点，翻牌圈一般至少 20，直接顶上去
+        if (state.pot < 20) state.pot = 20;
+      } else {
+        // 转牌河牌：把刚结束那一轮投进去的钱并进底池（含我自己跟的那笔）
+        state.pot = Math.round(state.pot + (calledCount() + 1) * state.call);
+      }
+      state.call = 0;      // 新一街还没人下注
+      state.called = 0;    // 已跟人数跟着重来
+      $('pot').value = String(state.pot);
+      $('call').value = '';
+      renderMoney('potSeg', 'pot', POT_PRESETS, POT_STEPS);
+      renderMoney('callSeg', 'call', CALL_PRESETS, CALL_STEPS);
+    }
     // 从点的那张一路选到本组最后一张，中间那张即使已经有牌也照样停一下，
     // 方便顺手改；走完本组才收起抽屉。
     var group = SLOTS[active].group;
@@ -562,14 +581,14 @@
   function renderMadeHand(hero, board) {
     var el = $('made');
     el.classList.remove('hidden-hand');
-    if (hero.length < 2) { el.textContent = '—'; $('madeHint').hidden = true; return; }
+    if (hero.length < 2) { el.textContent = '—'; $('madeHint').textContent = ''; return; }
     var score = E.evalHand(hero.concat(board));
     el.dataset.cat = score >>> 20;
     if (state.hideHero) {
       // 牌型会直接暴露手牌，一并遮住
-      el.textContent = '已隐藏（点手牌显示）';
+      el.textContent = '已隐藏';
       el.classList.add('hidden-hand');
-      $('madeHint').hidden = true;
+      $('madeHint').textContent = '';
       return;
     }
     el.textContent = E.describe(score);
@@ -577,51 +596,40 @@
     // 牌型完全由公共牌凑成时，桌上每个人都有这副牌，你拼的只是踢脚。
     // 这种局面人一多胜率会塌得很快，值得单独提醒。
     var hint = $('madeHint');
-    hint.hidden = true;
+    hint.textContent = '';
     if (board.length >= 3) {
       var bs = E.evalHand(board);
       if ((bs >>> 20) >= 1 && (bs >>> 20) === (score >>> 20)) {
-        hint.hidden = false;
         hint.textContent = '公共牌本身就是' + E.describe(bs)
           + '，桌上每个人都有，你比的只是踢脚';
       }
     }
   }
 
+  /* 右栏固定列出全部九种牌型，永远九行，高度不会变 */
   function renderDist(r) {
     var box = $('dist');
-    var boardN = state.board.filter(function (c) { return c !== null; }).length;
+    var boardN = boardCount();
     var curCat = parseInt($('made').dataset.cat || '0', 10);
-    var markCur = !state.hideHero;   // 高亮当前牌型同样会泄漏手牌
+    var markCur = !state.hideHero;
 
-    if (boardN >= 5) {
-      // 河牌已发完，不存在“还能成什么牌”
-      box.innerHTML = '';
-      $('toggleDist').hidden = true;
-      $('improve').textContent = '牌已发完，这就是最终牌型';
-      return;
-    }
-    $('toggleDist').hidden = false;
     if (state.hideHero) {
       $('improve').textContent = '';
+    } else if (boardN >= 5) {
+      $('improve').textContent = '牌已发完，这就是最终牌型';
     } else {
       var improve = 0;
       for (var c = curCat + 1; c <= 8; c++) improve += r.catCounts[c];
-      $('improve').innerHTML = '河牌发完后牌型变大的概率 <b>' + pct(improve) + '</b>';
+      $('improve').innerHTML = '牌型变大的概率 <b>' + pct(improve) + '</b>';
     }
 
-    $('toggleDist').textContent = state.showDist ? '收起' : '成牌分布';
-    if (!state.showDist) { box.innerHTML = ''; return; }
-
-    var max = Math.max.apply(null, r.catCounts);
     var html = '';
     for (var i = 8; i >= 0; i--) {
       var p = r.catCounts[i];
-      if (p < 0.0005) continue;
-      html += '<div class="dist-row' + (markCur && i === curCat ? ' cur' : '') + '">'
-        + '<span class="nm">' + E.CAT_NAMES[i] + '</span>'
-        + '<span class="tr"><span class="fl" style="width:' + (p / max * 100).toFixed(1) + '%"></span></span>'
-        + '<span class="vl">' + pct(p, p < 0.01 ? 2 : 1) + '</span></div>';
+      html += '<div class="dist-row' + (markCur && i === curCat ? ' cur' : '')
+        + (p < 0.0005 ? ' zero' : '') + '">'
+        + '<span>' + E.CAT_NAMES[i] + '</span>'
+        + '<span class="vl">' + (p < 0.0005 ? '—' : pct(p, p < 0.01 ? 2 : 1)) + '</span></div>';
     }
     box.innerHTML = html;
   }
@@ -914,9 +922,7 @@
     // 翻牌后按位置折算能真正打出来的那部分胜率
     var rf = realizeFactor();
     var eqR = Math.max(0, Math.min(1, eq * rf));
-    var posNote = posLabel()
-      ? '<br><span class="caveat">' + posLabel() + '，同样的牌能打出的价值不同，已按 '
-        + Math.round(rf * 100) + '% 折算</span>' : '';
+    var posNote = '';
 
     // ---- 翻牌前、没人下注：这是开池决策 ----
     // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
@@ -1101,12 +1107,6 @@
     // 和其他金额框一样，点进来直接全选，打字即覆盖
     $('tableSize').addEventListener('focus', function () {
       setTimeout(function () { try { $('tableSize').select(); } catch (e) {} }, 0);
-    });
-    $('toggleDist').addEventListener('click', function () {
-      state.showDist = !state.showDist;
-      save();
-      if (lastResult) renderDist(lastResult);
-      else $('toggleDist').textContent = state.showDist ? '收起' : '成牌分布';
     });
     $('toggleHero').addEventListener('click', function () {
       state.hideHero = !state.hideHero;

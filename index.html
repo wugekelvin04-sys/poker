@@ -10,10 +10,10 @@
 <meta name="apple-mobile-web-app-title" content="胜率">
 <meta name="theme-color" content="#0b0e13">
 <meta name="color-scheme" content="dark">
-<link rel="manifest" href="manifest.webmanifest?v=v45">
+<link rel="manifest" href="manifest.webmanifest?v=v46">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v45">
+<link rel="stylesheet" href="style.css?v=v46">
 </head>
 <body>
 
@@ -45,11 +45,15 @@
   </section>
 
   <section class="panel">
-    <div class="phead"><h2>当前牌型</h2><button class="link" id="toggleDist">成牌分布</button></div>
-    <div class="made" id="made">—</div>
-    <div class="made-hint" id="madeHint" hidden></div>
-    <div class="improve" id="improve"></div>
-    <div class="dist" id="dist"></div>
+    <div class="phead"><h2>当前牌型<em>河牌发完后的成牌分布</em></h2></div>
+    <div class="made-wrap">
+      <div class="made-left">
+        <div class="made" id="made">—</div>
+        <div class="made-hint" id="madeHint"></div>
+        <div class="improve" id="improve"></div>
+      </div>
+      <div class="dist" id="dist"></div>
+    </div>
   </section>
 
   <section class="panel">
@@ -93,10 +97,10 @@
   <div class="deck" id="deck"></div>
 </section>
 
-<script src="engine.js?v=v45"></script>
-<script src="sim.js?v=v45"></script>
-<script src="preflop.js?v=v45"></script>
-<script src="app.js?v=v45"></script>
+<script src="engine.js?v=v46"></script>
+<script src="sim.js?v=v46"></script>
+<script src="preflop.js?v=v46"></script>
+<script src="app.js?v=v46"></script>
 <script>
 /* 自愈：万一缓存里 HTML 和 JS 版本对不上导致初始化失败，
    自动清掉缓存重新加载一次，避免用户面对一个死掉的界面。
