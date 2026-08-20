@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v16';
+  var APP_VERSION = 'v17';
 
   var state = {
     hero: [null, null],
@@ -27,8 +27,8 @@
     seat: -1,            // 我在座位环里的下标，用于逐手轮转
     oppLevel: 'loose',   // 对手水平，决定按多强的范围给对手发牌
     players: 6,          // 这一手还剩几人没弃牌（含我）
-    pot: '',
-    call: '',
+    pot: 100,
+    call: 0,
     pos: 'mid',          // 我的位置，决定开池范围
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
@@ -50,7 +50,8 @@
         if (Array.isArray(s.board) && s.board.length === 5) state.board = s.board;
         if (s.tableSize >= 2 && s.tableSize <= 10) state.tableSize = s.tableSize;
         if (s.players >= 2 && s.players <= state.tableSize) state.players = s.players;
-        state.pot = s.pot || ''; state.call = s.call || '';
+        if (typeof s.pot === 'number') state.pot = s.pot;
+        if (typeof s.call === 'number') state.call = s.call;
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
@@ -191,17 +192,38 @@
     });
   }
 
+  /* 快捷金额和输入框并存：点按钮直接填，也可以自己敲一个数 */
+  function renderMoney(boxId, key, presets) {
+    var box = $(boxId);
+    box.innerHTML = '';
+    presets.forEach(function (v) {
+      var b = document.createElement('button');
+      b.textContent = v;
+      if (v === state[key]) b.className = 'on';
+      b.addEventListener('click', function () {
+        state[key] = v;
+        $(key).value = v === 0 ? '' : String(v);
+        renderMoney(boxId, key, presets);
+        renderBettors(); save(); renderOdds();
+      });
+      box.appendChild(b);
+    });
+  }
+
   function renderBettors() {
     renderPos();
     renderOppLevel();
+    renderMoney('potSeg', 'pot', POT_PRESETS);
+    renderMoney('callSeg', 'call', CALL_PRESETS);
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
+    // 翻牌前没人加注时，开池与否只看起手牌和位置，金额用不上
+    var unraised = preflop && state.call <= 0;
+    $('potRow').hidden = unraised;
+    $('hintRow').hidden = unraised;
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
-    $('quickBets').hidden = preflop;   // 翻牌前按大盲倍数下注，池比例用不上
-    $('hintRow').textContent = preflop
-      ? '原底池填 0 = 还没人加注，需跟注填的就是大盲'
-      : '原底池 = 他们下注前池里的钱；需跟注 0 = 没人下注';
+    $('hintRow').textContent = '底池 = 中间现在一共多少，已含他下的注；要跟填 0 = 没人下注';
   }
 
   // ---------- 选牌抽屉 ----------
@@ -537,13 +559,11 @@
   }
 
   // ---------- 底池赔率 ----------
-  function num(v) { var x = parseFloat(v); return isFinite(x) && x > 0 ? x : 0; }
-
   /* 位置。翻牌前盲注是在庄家之后行动的，所以不能用「后面还有几人」来推——
      那样庄位会数出小盲大盲两个人，被判成很紧的范围，而实际庄位开得最宽。 */
-  /* 新一局时「需跟注」回填的默认值，也就是常见的一个大盲。
-     判断「有没有人加注」不靠这个数——那样换个级别的桌子就失灵了。 */
-  var DEFAULT_BB = 2;
+  /* 一个大盲多少筹码。桌子级别变了就改这一处。
+     翻牌前「需跟注」等于它 = 没人加注；大于它 = 有人加注了。 */
+  var BIG_BLIND = 2;
 
   /* 对手水平 → 只从最强的前多少比例起手牌里给对手发牌。
      对手敢投钱说明范围强于随机，但娱乐局的人是真的什么牌都玩，
@@ -558,6 +578,12 @@
       if (OPP_LEVELS[i].k === state.oppLevel) return OPP_LEVELS[i].pctl;
     return 1;
   }
+
+  /* 底池和跟注都用快捷金额，牌桌上没法数清物理筹码，估个量级就够用。
+     底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
+     赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
+  var POT_PRESETS  = [20, 50, 100, 200, 300, 500];
+  var CALL_PRESETS = [0, 5, 10, 15, 20, 25, 30, 50];
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
@@ -627,12 +653,8 @@
     var out = $('oddsOut');
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
 
-    var potBefore = num(state.pot);        // 他们这轮下注之前池子里的钱
-    var call = num(state.call);            // 我要跟的额度
-    // 还在这手牌里的其他人都已投进这笔跟注额，
-    // 底池由「还剩几人」直接推出来，不用你心算
-    var bettors = state.players - 1;
-    var potNow = potBefore + call * bettors;
+    var potNow = state.pot;                // 中间现在一共多少，已含对手的注
+    var call = state.call;                 // 我要跟多少
 
     var eq = lastResult.equity;
     var fair = 1 / state.players;          // 均分时每人应得的份额
@@ -642,11 +664,9 @@
     // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
     // 你赢的是盲注，而全下均分完全没有弃牌率这回事。
     // 正确做法是看这手牌在 169 手起手牌里的强度排位，再对照位置该开多宽。
-    // 翻牌前原底池为 0 = 还没人加注，你要跟的那笔就是大盲本身。
-    // 不能拿「需跟注 ≤ 2」来判断，大盲 10 的桌子会整个失灵。
-    // 反过来若真有人加注，死钱必然大于 0，否则底池赔率本身也算不对。
+    // 翻牌前你要跟的就是一个大盲 = 还没人加注；比大盲大就是有人加注了。
     var preflopUnraised = state.board.every(function (c) { return c === null; })
-      && potBefore <= 0;
+      && call <= 0;   // 「没人下」= 翻牌前还没人加注
     if (preflopUnraised && window.PokerPreflop) {
       var pctl = PokerPreflop.percentile(state.hero[0], state.hero[1]);
 
@@ -672,8 +692,7 @@
         // 不用额外配置，也自动适配任何级别的桌子。
         // 标准开池尺度：2.5 倍大盲（小盲位 3 倍），场上每有一个跛入者再加一个大盲，
         // 而跛入进来的钱正好就是「原底池」。
-        var bb = call > 0 ? call : DEFAULT_BB;   // 没人加注时，要跟的就是一个大盲
-        var to = (state.pos === 'sb' ? 3 : 2.5) * bb;
+        var to = (state.pos === 'sb' ? 3 : 2.5) * BIG_BLIND;
         v0 = '开池加注到 ' + chips(to);
         act += '，' + (state.pos === 'sb' ? '3' : '2.5') + ' 倍大盲';
       }
@@ -722,11 +741,7 @@
     else { verdict = '跟注 ' + chips(call); cls = 'good'; }
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
-      + '底池 <b>' + chips(potNow) + '</b>'
-      + (bettors > 0 && call > 0
-          ? '（' + chips(potBefore) + '+' + bettors + '×' + chips(call) + '）'
-          : '')
-      + '，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
+      + '底池 <b>' + chips(potNow) + '</b>，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
       + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
     if (state.board.every(function (c) { return c === null; })) {
@@ -777,8 +792,8 @@
           // 开新一局：牌和金额清掉；人数恢复成桌上总人数；
           // 庄家挪一位，我的位置也跟着顺延一格
           // 新一局：底池清零，需跟注回到一个大盲——这就是每手开始的样子
-          state.pot = '0'; state.call = String(DEFAULT_BB);
-          $('pot').value = state.pot; $('call').value = state.call;
+          state.pot = 100; state.call = 0;
+          $('pot').value = '100'; $('call').value = '';
           state.players = state.tableSize;
           advanceSeat();
           state.hideHero = true;   // 新一局默认盖着，想看点一下牌背
@@ -790,9 +805,14 @@
 
     ['pot', 'call'].forEach(function (k) {
       var el = $(k);
-      el.value = state[k];
+      el.value = state[k] ? String(state[k]) : '';
       el.addEventListener('input', function () {
-        state[k] = el.value; save(); renderBettors(); renderOdds();
+        var v = parseFloat(el.value);
+        state[k] = isFinite(v) && v > 0 ? v : 0;
+        save();
+        renderMoney(k === 'pot' ? 'potSeg' : 'callSeg', k,
+          k === 'pot' ? POT_PRESETS : CALL_PRESETS);
+        renderBettors(); renderOdds();
       });
       // 点进来光标会落在数字中间，很难改。直接全选，打字即覆盖。
       el.addEventListener('focus', function () {
@@ -800,20 +820,8 @@
       });
     });
     $('clearOdds').addEventListener('click', function () {
-      state.pot = ''; state.call = '';
+      state.pot = 0; state.call = 0;
       $('pot').value = ''; $('call').value = '';
-      renderBettors(); save(); renderOdds();
-    });
-    $('quickBets').addEventListener('click', function (e) {
-      var b = e.target.closest('button');
-      if (!b) return;
-      var pot = num(state.pot);
-      var f = parseFloat(b.dataset.frac);
-      if (f === 0) { state.call = '0'; $('call').value = '0'; save(); renderOdds(); return; }
-      if (!pot) { $('pot').focus(); return; }
-      // 底池填的是下注之前的数额，所以尺度直接乘即可，无需折算
-      state.call = String(Math.round(pot * f * 10) / 10);
-      $('call').value = state.call;
       renderBettors(); save(); renderOdds();
     });
   }
