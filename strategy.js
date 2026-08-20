@@ -24,7 +24,12 @@
      都付过钱了，跟这条街有没有下注无关。翻牌前没人加注是唯一的例外：
      那时谁都还没做选择，范围确实接近随机。
      翻牌后已经改按牌面契合度筛，本身就够狠了，逐街收窄的幅度要小得多。 */
-  var STREET_TIGHTEN = { 0: 1, 3: 1, 4: 0.92, 5: 0.85 };
+  /* 同样大小的注，越往后越有分量：河牌还敢开火的人，范围比翻牌窄得多。
+     娱乐局这一档有牌桌实测口径（翻牌 ×1、转牌 ×0.8、河牌 ×0.6）；
+     一般和老手没有同样的数据，沿用原来的保守值——实测把娱乐局那套
+     套到基础更窄的档位上会过头（老手 + 2 倍池收到前 9.8%），成绩明显下滑。 */
+  var STREET_TIGHTEN      = { 0: 1, 3: 1, 4: 0.92, 5: 0.85 };
+  var STREET_TIGHTEN_LOOSE = { 0: 1, 3: 1, 4: 0.8,  5: 0.6 };
 
   var OPP_LEVELS = [
     { k: 'loose',  n: '娱乐局', pctl: 1,    board: 0.85 },
@@ -57,6 +62,19 @@
      把跟注档最强的那批（AQo TT AJs AJo 99 ATs 88 ATo A9s 77 KQs）升级成反打，
      要么翻牌前直接拿下，要么带着主动权进翻牌——而主动下注正是这套算法唯一擅长的事。
      前 9% 装的是 AA-77 / AK-AT / KQ，是短桌大盲反打的标准范围，还偏紧一点。 */
+  /* 防守范围要按对手档位整体缩放。原来三档共用同一张表——2.5 倍开池时
+     raiseTier 的收紧系数对三档都等于 1，于是娱乐局和老手局的防守宽度
+     一模一样，这显然不对：
+       娱乐局的开池范围是前 70%（27o 都能跟 5 进来），对着这种范围
+       J8s 在庄位当然该进；老手开池是前 20%，同一手牌就该弃。
+     跟注档按对手范围的宽度放大／收窄；再加注档动得少——
+     对娱乐局多打价值反打有用，但诈唬性反打没有弃牌率，不该跟着放宽。 */
+  var DEFEND_LEVEL = {
+    loose:  { three: 1.2, call: 1.8 },
+    normal: { three: 1.0, call: 1.0 },
+    tight:  { three: 1.0, call: 0.7 }
+  };
+
   var DEFEND = {
     early: { three: 0.03, call: 0.10 },
     mid:   { three: 0.04, call: 0.14 },
@@ -105,9 +123,19 @@
   /* 下注尺度本身就带信息：小注范围宽（探路、薄价值都可能），
      大注范围强。要跟/底池 正好就是这个尺度——底池已含他的注，
      所以半池下注约 0.33，满池约 0.5，1/4 池约 0.2。 */
+  /* 下注尺度带的信息量，是按牌桌实测口径定的（娱乐局、单挑、翻牌）：
+       ¼ 池 → 前 65%   ½ 池 → 前 40%   满池 → 前 25%   2 倍池 → 前 15%
+     这四个点在对数坐标上几乎是一条直线（每翻一倍尺度，范围乘 0.61），
+     所以拟合成幂律 0.291 ÷ 比例^0.703，再乘上各档的基础宽度。
+
+     原来的公式是 1.05 − 0.8×比例、下限 0.65，半池就撞到下限了——
+     半池、满池、2 倍池、4 倍池得到的对手范围一模一样，
+     等于「超池注不携带任何信息」，对手可以用超池注价值最大化而不被察觉。 */
   function betSizeFactor(g) {
     if (!facingBet(g) || !(g.pot > 0)) return 1;
     var ratio = g.call / g.pot;
+    if (g.oppLevel === 'loose')
+      return Math.max(0.08, Math.min(1, 0.291 / Math.pow(Math.max(0.02, ratio), 0.703)));
     var f = 1.05 - 0.8 * ratio;             // 0.2→0.89  0.33→0.79  0.5→0.65
     return Math.max(0.65, Math.min(1, f));
   }
@@ -222,7 +250,8 @@
     if (n === 0 && g.oppLevel === 'loose')
       return preflopLooseRange((g.call + posted(g)) / BIG_BLIND);
     var base = n >= 3 ? oppLevel(g).board : oppLevel(g).pctl;
-    var p = base * (STREET_TIGHTEN[n] || 1) * betSizeFactor(g);
+    var tight = g.oppLevel === 'loose' ? STREET_TIGHTEN_LOOSE : STREET_TIGHTEN;
+    var p = base * (tight[n] || 1) * betSizeFactor(g);
     return Math.max(0.05, Math.min(1, p));
   }
 
@@ -439,9 +468,11 @@
       var dp = PF.vsRaise ? PF.vsRaise(g.hero[0], g.hero[1])
                           : PF.percentile(g.hero[0], g.hero[1]);
       var d0 = DEFEND[g.pos] || DEFEND.mid;
+      var lv = DEFEND_LEVEL[g.oppLevel] || DEFEND_LEVEL.normal;
       var level = call + posted(g);               // 他加到了多少
       var tier = raiseTier(g, level);
-      var d = { three: d0.three * tier.mult, call: d0.call * tier.mult };
+      var d = { three: Math.min(1, d0.three * lv.three * tier.mult),
+                call:  Math.min(1, d0.call  * lv.call  * tier.mult) };
       var v1, c1, why, a1, amt1;
       if (dp <= d.three) {
         // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
@@ -557,6 +588,7 @@
     POS: POS,
     OPEN_RANGE: OPEN_RANGE,
     DEFEND: DEFEND,
+    DEFEND_LEVEL: DEFEND_LEVEL,
     TIER_EXP: TIER_EXP,
 
     boardCount: boardCount,
