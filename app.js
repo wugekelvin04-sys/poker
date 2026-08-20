@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v53';
+  var APP_VERSION = 'v54';
 
   var state = {
     hero: [null, null],
@@ -963,6 +963,15 @@
   /* 筹码都是整数，任何金额一律取整，别报出 7.5 这种数 */
   function chips(x) { return String(Math.round(x)); }
 
+  /* 加注、下注的数额取整到好按的数上：牌桌上推的是实体筹码，
+     「加注到 146」没人推得出来，实际也就推 150。
+     50 以下取 5 的倍数，50 以上取 10 的倍数。
+     跟注不能这么取——跟多少是对手定的，必须给准数。 */
+  function betSize(x) {
+    var v = x < 50 ? Math.round(x / 5) * 5 : Math.round(x / 10) * 10;
+    return Math.max(5, v);
+  }
+
   /* 任何建议都不能超过手上的筹码，超了就是全下 */
   function sized(x) {
     var st = state.stack;
@@ -1056,7 +1065,7 @@
         // 标准开池尺度：2.5 倍大盲（小盲位 3 倍），场上每有一个跛入者再加一个大盲，
         // 而跛入进来的钱正好就是「原底池」。
         var to = (state.pos === 'sb' ? 3 : 2.5) * BIG_BLIND;
-        v0 = actText('开池加注到', to);
+        v0 = actText('开池加注到', betSize(to));
         act += '，' + (state.pos === 'sb' ? '3' : '2.5') + ' 倍大盲';
       }
       out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>'
@@ -1082,7 +1091,7 @@
       if (dp <= d.three) {
         // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
         var ip = state.pos === 'btn' || state.pos === 'late';
-        v1 = actText('再加注到', level * (ip ? 3 : 4)); c1 = 'good';
+        v1 = actText('再加注到', betSize(level * (ip ? 3 : 4))); c1 = 'good';
         why = '够强，值得反打' + (ip ? '（有位置 3 倍）' : '（没位置 4 倍）') + '。';
       } else if (dp <= d.call) {
         v1 = actText('跟注', call); c1 = 'good';
@@ -1110,11 +1119,11 @@
       var verdict1, cls1, why1;
       var ratioR = eqR / fair;
       if (ratioR >= 2) {
-        verdict1 = actText('下注', potNow * 0.75); cls1 = 'good';
+        verdict1 = actText('下注', betSize(potNow * 0.75)); cls1 = 'good';
         why1 = '胜率 <b>' + (pct(eq)) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
           + pct(fair) + '</b>，下 ¾ 池要价值。';
       } else if (ratioR >= 1.3) {
-        verdict1 = actText('下注', potNow * 0.5); cls1 = 'good';
+        verdict1 = actText('下注', betSize(potNow * 0.5)); cls1 = 'good';
         why1 = '胜率 <b>' + (pct(eq)) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
       } else {
         verdict1 = '过牌'; cls1 = 'even';
@@ -1144,7 +1153,7 @@
     var verdict, cls;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
     else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; }
-    else if (eqR >= 1.6 * fair && edge >= 0.15) { verdict = actText('加注到', raiseTo); cls = 'good'; }
+    else if (eqR >= 1.6 * fair && edge >= 0.15) { verdict = actText('加注到', betSize(raiseTo)); cls = 'good'; }
     else { verdict = actText('跟注', call); cls = 'good'; }
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
