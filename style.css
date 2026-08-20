@@ -46,8 +46,8 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 .dot-w{background:var(--win)} .dot-t{background:var(--tie)} .dot-l{background:var(--lose)}
 
 /* ---------- 面板 ---------- */
-main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:column;gap:6px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:column;gap:6px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 11px}
 .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
 .link{color:var(--accent);font-size:13px;padding:4px 2px}
 .link:active{opacity:.5}
@@ -104,7 +104,7 @@ main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:col
 .seg button.on{background:var(--accent);color:#fff;font-weight:600}
 
 /* ---------- 牌型 / 分布 ---------- */
-.made{font-size:17px;font-weight:600;letter-spacing:-.01em;height:22px;line-height:22px;overflow:hidden}
+.made{font-size:17px;font-weight:600;letter-spacing:-.01em;height:20px;line-height:20px;overflow:hidden}
 .made.hidden-hand{color:var(--dim);font-size:15px;font-weight:400}
 /* 这几行都固定高度：内容变化（比如藏牌、牌面提示出现）不该让整块上下跳 */
 .made-hint{font-size:11.5px;color:var(--tie);margin-top:4px;height:17px;line-height:17px;
@@ -117,7 +117,7 @@ main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:col
 /* 九种牌型排成两列五行，高度只有五行，比竖着排省一半 */
 .dist{flex:0 0 186px;display:grid;grid-template-columns:1fr 1fr;
   grid-template-rows:repeat(5,1fr);grid-auto-flow:column;column-gap:10px}
-.dist-row{display:flex;justify-content:space-between;font-size:11px;line-height:13.5px;color:var(--dim)}
+.dist-row{display:flex;justify-content:space-between;font-size:11px;line-height:13px;color:var(--dim)}
 .dist-row .vl{font-variant-numeric:tabular-nums}
 .dist-row.zero{opacity:.35}
 .dist-row.cur{color:var(--win);font-weight:600}
@@ -137,7 +137,7 @@ main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:col
 /* 定高：建议的行数会变（有没有加注说明、有没有各种提醒），
    不定高的话整页高度就会跟着跳 */
 .odds-out{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5;
-  height:106px;overflow:hidden}
+  height:90px;overflow:hidden}
 .odds-out .verdict{display:block;font-size:18px;font-weight:650;margin-bottom:4px;letter-spacing:-.01em}
 .odds-out .good{color:var(--win)} .odds-out .bad{color:var(--lose)} .odds-out .even{color:var(--tie)}
 .odds-out b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
@@ -184,8 +184,8 @@ main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:col
 .hint b{color:var(--muted);font-weight:600}
 #bettors{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
 
-.ver{text-align:center;padding:0}
-.ver button{font-size:9.5px;color:#454e5e;padding:1px 8px}
+.ver{text-align:center;padding:1px 0 0}
+.ver button{font-size:9.5px;color:#454e5e;padding:0 8px}
 .ver button:active{color:var(--accent)}
 
 .odds-out .caveat{color:var(--dim);font-size:10.5px}
@@ -234,3 +234,12 @@ main{padding:8px 11px calc(var(--safe-b) + 10px);display:flex;flex-direction:col
 
 /* 用不上的行置灰但保留占位，操作区位置不会跳 */
 .seat-row.dim{opacity:.3;pointer-events:none}
+
+/* 点这块可以盖牌/翻牌 */
+#heroToggle{cursor:pointer;-webkit-user-select:none;user-select:none}
+#heroToggle:active{opacity:.6}
+
+/* 新一局放到最下面，拇指最容易够到的位置。每手牌都要点，值得占一整行 */
+.newhand{width:100%;margin-top:2px;padding:7px 0;border-radius:11px;
+  background:#1d3350;color:var(--accent);font-size:15px;font-weight:600;letter-spacing:.02em}
+.newhand:active{opacity:.6}

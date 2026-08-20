@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v46';
+  var APP_VERSION = 'v47';
 
   var state = {
     hero: [null, null],
@@ -121,7 +121,7 @@
       note = RANKS[hi] + RANKS[lo] + (ra === rb ? '' : ((a & 3) === (b & 3) ? 's' : 'o'));
     }
     $('heroNotation').textContent = state.hideHero ? '' : note;
-    $('toggleHero').textContent = state.hideHero ? '显示' : '隐藏';
+    $('heroToggleHint').textContent = state.hideHero ? '点一下显示' : '点一下可隐藏';
 
     var n = state.board.filter(function (c) { return c !== null; }).length;
     $('streetName').textContent =
@@ -995,21 +995,20 @@
         // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
         var ip = state.pos === 'btn' || state.pos === 'late';
         v1 = actText('再加注到', level * (ip ? 3 : 4)); c1 = 'good';
-        why = '这手牌够强，值得反打施压' + (ip ? '（有位置，3 倍即可）' : '（没位置，打到 4 倍）') + '。';
+        why = '够强，值得反打' + (ip ? '（有位置 3 倍）' : '（没位置 4 倍）') + '。';
       } else if (dp <= d.call) {
         v1 = actText('跟注', call); c1 = 'good';
-        why = '在防守范围内，跟一手看翻牌。';
+        why = '在防守范围内，跟一手。';
       } else {
         v1 = '弃牌 ✕'; c1 = 'bad';
-        why = '超出' + posName() + '面对加注的防守范围。';
+        why = '超出防守范围。';
       }
       out.innerHTML = '<span class="verdict ' + c1 + '">' + v1 + '</span>'
-        + posName() + '面对' + tier.name + '（' + (level / BIG_BLIND).toFixed(1) + 'BB）：<b>前 '
-        + (d.call * 100).toFixed(1) + '%</b> 跟、<b>前 '
-        + (d.three * 100).toFixed(1) + '%</b> 再加，这手牌排<b>前 '
+        + posName() + '面对 ' + (level / BIG_BLIND).toFixed(1) + 'BB 加注：跟<b>前 '
+        + (d.call * 100).toFixed(1) + '%</b>／再加<b>前 '
+        + (d.three * 100).toFixed(1) + '%</b>，本手<b>前 '
         + (dp * 100).toFixed(0) + '%</b> → ' + why
-        + '<br><span class="caveat">翻牌前按起手牌范围判断，不用底池赔率——'
-        + '赔率是按对手随机牌算的，而敢加注的人范围强得多</span>';
+        + '<br><span class="caveat">翻牌前按范围判断，不看赔率</span>';
       return;
     }
 
@@ -1075,14 +1074,13 @@
       // 口袋对子翻牌摸中暗三约 11.8%，纯胜率排位低估了这类牌
       var h0 = state.hero[0], h1 = state.hero[1];
       if (h0 !== null && h1 !== null && (h0 >> 2) === (h1 >> 2) && verdict.indexOf('弃牌') === 0) {
-        html += '<br><span class="caveat">口袋对子有隐含赔率：翻牌 12% 中暗三，'
-          + '手上筹码够跟注额 15 倍以上就值得摸一手</span>';
+        html += '<br><span class="caveat">口袋对子：翻牌 12% 中暗三，筹码够 15 倍可摸</span>';
       }
       // 大盲已经投过钱，防守价格比别人好
       if (state.pos === 'bb' && call > 0) {
-        html += '<br><span class="caveat">大盲已投过钱，防守可更宽，但翻牌后无位置</span>';
+        html += '<br><span class="caveat">大盲防守可更宽，但翻牌后无位置</span>';
       }
-      html += '<br><span class="caveat">对手敢下注，范围强于随机牌，实战胜率比这更低</span>';
+      html += '<br><span class="caveat">对手敢下注，实战胜率比这更低</span>';
     }
     out.innerHTML = html;
   }
@@ -1108,7 +1106,8 @@
     $('tableSize').addEventListener('focus', function () {
       setTimeout(function () { try { $('tableSize').select(); } catch (e) {} }, 0);
     });
-    $('toggleHero').addEventListener('click', function () {
+    // 点「当前牌型」那块就能盖牌/翻牌——牌桌上一只手就能操作
+    $('heroToggle').addEventListener('click', function () {
       state.hideHero = !state.hideHero;
       save(); renderSlots(); runNow();
     });
