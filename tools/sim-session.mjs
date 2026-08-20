@@ -21,6 +21,23 @@ const E = globalThis.PokerEngine, S = globalThis.PokerSim, PF = globalThis.Poker
 const HANDS = parseInt(process.argv[2] || '100000', 10);
 const OPP_KIND = process.argv[3] || 'amateur';
 const HERO_KIND = process.argv[4] || 'algo';   // algo = 本 App 的算法；其余按规则型玩家打
+/* 实验开关：
+   range  面对下注时，只从前 30% 的强牌里给对手发牌（现版本是随机牌）
+   edgy   「临界」判为弃牌（现版本判为跟注） */
+const OPTS = (process.argv[5] || '').split(',').filter(Boolean);
+const RANGE_OPT = OPTS.find(o => o.startsWith('range'));
+const RANGE_PCT = RANGE_OPT ? (parseFloat(RANGE_OPT.split('=')[1]) || 0.30) : 0;
+const USE_RANGE = !!RANGE_OPT;
+const FOLD_MARGINAL = OPTS.includes('edgy');
+/* bluff=P  该过牌时以 P 的频率半诈唬下注（只在单挑、且手上有点底子时）
+   catch=Q  该弃牌但只差一点时，以 Q 的频率抓偷鸡跟一手（只在单挑） */
+const numOpt = (k, dflt) => {
+  const o = OPTS.find(x => x.startsWith(k));
+  return o ? (parseFloat(o.split('=')[1]) || dflt) : 0;
+};
+const FREE_BLIND = OPTS.includes('freeblind');   // 留一个对手（大盲）不受范围限制
+const BLUFF = numOpt('bluff', 0.25);
+const CATCH = numOpt('catch', 0.30);
 const N = 8, BB = 2, SB = 1, BUYIN = 200;
 
 // ---------------- 随机数 ----------------
@@ -57,6 +74,7 @@ const openRange = (pos, n) => (n >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short)[pos]
 /* o = { preflop, pos, pctl, potNow, call, playersLeft, equity } */
 function heroPolicy(o) {
   const eq = o.equity, fair = 1 / o.playersLeft, ratio = eq / fair;
+  const heads = o.playersLeft === 2;   // 只剩一个对手。多人底池里诈唬基本是送钱
 
   if (o.preflop && o.call <= 0) {
     if (o.pos === 'bb') return { act: 'check' };
@@ -67,12 +85,19 @@ function heroPolicy(o) {
   if (o.call <= 0) {
     if (ratio >= 2)   return { act: 'bet', amount: o.potNow * 0.75 };
     if (ratio >= 1.3) return { act: 'bet', amount: o.potNow * 0.5 };
+    // 半诈唬：单挑、手上还有点底子（能听牌或有摊牌价值）时才偷
+    if (BLUFF && heads && !o.preflop && eq >= 0.20 && rnd() < BLUFF)
+      return { act: 'bet', amount: o.potNow * 0.5 };
     return { act: 'check' };
   }
   const required = o.call / (o.potNow + o.call);
   const edge = eq - required;
-  if (edge < -0.02) return { act: 'fold' };
-  if (edge < 0.02)  return { act: 'call' };       // 「临界」按跟注处理
+  if (edge < -0.02) {
+    // 抓偷鸡：只差一点、又是单挑，对手有可能在偷，按一定频率跟一手
+    if (CATCH && heads && !o.preflop && edge >= -0.10 && rnd() < CATCH) return { act: 'call' };
+    return { act: 'fold' };
+  }
+  if (edge < 0.02)  return FOLD_MARGINAL ? { act: 'fold' } : { act: 'call' };
   if (eq >= 1.6 * fair && edge >= 0.15)
     return { act: 'raise', to: o.call + 0.7 * (o.potNow + o.call) };
   return { act: 'call' };
@@ -85,8 +110,11 @@ const OPPS = {
   amateur:  { openPct: 0.40, callPct: 0.30, threePct: 0.03, callMaxPotFrac: 0.9, betCat: 2, betSize: 0.6 },
   // 跟注站：几乎什么都跟，从不主动施压
   station:  { openPct: 0.55, callPct: 0.60, threePct: 0.00, callMaxPotFrac: 2.0, betCat: 6, betSize: 0.5 },
-  // 紧凶：范围紧、有牌就打
-  tag:      { openPct: 0.18, callPct: 0.12, threePct: 0.04, callMaxPotFrac: 0.5, betCat: 1, betSize: 0.7 }
+  // 紧凶：范围紧、有牌就打，但从不诈唬
+  tag:      { openPct: 0.18, callPct: 0.12, threePct: 0.04, callMaxPotFrac: 0.5, betCat: 1, betSize: 0.7 },
+  // 高手：范围紧、该弃就弃，而且会偷鸡——只有这种对手才测得出诈唬和抓偷鸡的价值
+  pro:      { openPct: 0.20, callPct: 0.13, threePct: 0.045, callMaxPotFrac: 0.5, betCat: 1, betSize: 0.7,
+              bluff: 0.30, foldToBluffCatch: true }
 };
 
 function oppPolicy(cfg, o) {
@@ -103,6 +131,8 @@ function oppPolicy(cfg, o) {
   const cat = o.madeCat;
   if (o.call <= 0) {
     if (cat >= cfg.betCat) return { act: 'bet', amount: o.potNow * cfg.betSize };
+    // 会偷鸡的对手：单挑时按一定频率无牌也下注
+    if (cfg.bluff && o.heads && rnd() < cfg.bluff) return { act: 'bet', amount: o.potNow * cfg.betSize };
     return { act: 'check' };
   }
   if (cat >= cfg.betCat + 2) return { act: 'raise', to: o.call + o.potNow * 0.7 };
@@ -151,6 +181,64 @@ const preflopEq = (c1, c2, opp) => PREEQ[preflopKey(c1, c2)][Math.min(Math.max(o
 function postflopEq(hole, board, opp) {
   const r = S.simulate({ hero: hole, board, players: opp + 1, maxIterations: 900, timeLimitMs: 0 });
   return r.equity;
+}
+
+/* 只从「前 maxPctl 的起手牌」里给对手发牌，再算胜率。
+   对手敢投钱说明他的范围强于随机牌，这才是该用的口径。 */
+function eqVsRange(hole, board, oppCount, maxPctl, iters) {
+  const used = new Uint8Array(52);
+  for (const c of hole) used[c] = 1;
+  for (const c of board) used[c] = 1;
+  const free = [];
+  for (let c = 0; c < 52; c++) if (!used[c]) free.push(c);
+
+  const need = 5 - board.length;
+  const h7 = new Int32Array(7), o7 = new Int32Array(7);
+  h7[0] = hole[0]; h7[1] = hole[1];
+  let win = 0, tieEq = 0, n = 0;
+
+  for (let it = 0; it < iters; it++) {
+    const taken = new Uint8Array(52);
+    const draw = [];
+    const pick = () => {
+      for (let g = 0; g < 200; g++) {
+        const c = free[(rnd() * free.length) | 0];
+        if (!taken[c]) { taken[c] = 1; return c; }
+      }
+      return -1;
+    };
+    // 补齐公共牌
+    let bad = false;
+    const comm = board.slice();
+    for (let i = 0; i < need; i++) { const c = pick(); if (c < 0) { bad = true; break; } comm.push(c); }
+    if (bad) continue;
+    // 每个对手在范围内随机取两张
+    const opps = [];
+    for (let k = 0; k < oppCount && !bad; k++) {
+      const free = FREE_BLIND && k === 0;      // 盲注被迫投钱，范围本就宽
+      let ok = false;
+      for (let g = 0; g < (free ? 1 : 60); g++) {
+        const a = pick(); if (a < 0) { bad = true; break; }
+        const b = pick(); if (b < 0) { bad = true; break; }
+        if (free || PF.percentile(a, b) <= maxPctl) { opps.push([a, b]); ok = true; break; }
+        taken[a] = 0; taken[b] = 0;      // 不在范围内就放回去重抽
+      }
+      if (!ok) bad = true;
+    }
+    if (bad) continue;
+
+    for (let i = 0; i < 5; i++) { h7[2 + i] = comm[i]; o7[2 + i] = comm[i]; }
+    const hs = E.evalHand(h7, 7);
+    let best = -1, ties = 0;
+    for (const o of opps) {
+      o7[0] = o[0]; o7[1] = o[1];
+      const sc = E.evalHand(o7, 7);
+      if (sc > best) { best = sc; ties = 1; } else if (sc === best) ties++;
+    }
+    if (hs > best) win++; else if (hs === best) tieEq += 1 / (ties + 1);
+    n++;
+  }
+  return n ? (win + tieEq) / n : 0.5;
 }
 
 // ---------------- 发牌 ----------------
@@ -222,9 +310,14 @@ function playHand(btn) {
           let d;
           const useAlgo = MIRROR || (p.hero ? HERO_KIND === 'algo' : false);
           if (useAlgo) {
-            const eq = street === 0
-              ? preflopEq(p.cards[0], p.cards[1], Math.max(oppLeft, 1))
-              : postflopEq(p.cards, board.slice(0, 2 + street), Math.max(oppLeft, 1));
+            const nOpp = Math.max(oppLeft, 1);
+            const bd = board.slice(0, 2 + street);
+            // 面对下注时按收窄的范围算；无人下注时对手范围本就宽，仍按随机牌
+            const eq = (USE_RANGE && toCall > 0)
+              ? eqVsRange(p.cards, street === 0 ? [] : bd, nOpp, RANGE_PCT, 700)
+              : (street === 0
+                  ? preflopEq(p.cards[0], p.cards[1], nOpp)
+                  : postflopEq(p.cards, bd, nOpp));
             d = heroPolicy({
               preflop: street === 0, pos: posOf(seat, btn),
               pctl: PF.percentile(p.cards[0], p.cards[1]),
@@ -234,6 +327,7 @@ function playHand(btn) {
           } else {
             const rule = p.hero ? OPPS[HERO_KIND] : seatCfg(seat);
             d = oppPolicy(rule, {
+              heads: oppLeft === 1,
               preflop: street === 0, pos: posOf(seat, btn),
               pctl: PF.percentile(p.cards[0], p.cards[1]),
               potNow, call: toCall, stack: p.stack,
@@ -344,7 +438,7 @@ process.stderr.write('\n');
 const net = HERO.profit + HERO.stack - BUYIN;
 const bb100 = net / BB / HANDS * 100;
 console.log('');
-console.log(`英雄策略      ${HERO_KIND === 'algo' ? '本 App 的算法' : HERO_KIND + '（规则型）'}`);
+console.log(`英雄策略      ${HERO_KIND === 'algo' ? '本 App 的算法' : HERO_KIND + '（规则型）'}${OPTS.length ? ' + ' + OPTS.join('+') : ''}`);
 console.log(`对手类型      ${MIXED ? '混合桌（2 跟注站 + 3 松被动 + 2 紧凶）' : OPP_KIND + ' × 7'}`);
 console.log(`手数          ${HANDS.toLocaleString()}`);
 console.log(`每手带入      ${BUYIN}（${BUYIN / BB}BB），每手结束把盈亏收走再坐回 ${BUYIN}`);

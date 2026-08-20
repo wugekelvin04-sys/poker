@@ -48,6 +48,9 @@
    * @param {number}  [o.batchSize=4000]
    * @param {function} [o.onProgress] 每批回调，收到累计统计
    * @param {number}  [o.seed]
+   * @param {number}  [o.oppMaxPctl=1] 只从「最强的前这么多比例」的起手牌里给对手发牌。
+   *                  1 = 随机牌。对手敢投钱时他的范围本就强于随机，这个参数就是用来
+   *                  修正那份乐观的。需要 preflop.js 提供起手牌强度排位。
    */
   function simulate(o) {
     var hero = o.hero, board = o.board || [], players = o.players;
@@ -69,6 +72,9 @@
     if (draw > deck.length) throw new Error('剩余牌不够发给这么多人');
 
     var deckLen = deck.length;
+    var maxPctl = o.oppMaxPctl === undefined ? 1 : o.oppMaxPctl;
+    var PFL = global.PokerPreflop;
+    var ranged = maxPctl < 1 && PFL && oppCount > 0;   // 拿不到排位表就退回随机牌
     var comm = new Int32Array(5);
     var h7 = new Int32Array(7), o7 = new Int32Array(7);
     for (var i = 0; i < board.length; i++) comm[i] = board[i];
@@ -81,10 +87,33 @@
     while (n < maxIter) {
       var target = Math.min(n + batchSize, maxIter);
       for (; n < target; n++) {
-        // 部分 Fisher-Yates：只洗出需要的前 draw 张
-        for (var k = 0; k < draw; k++) {
-          var j = k + ((rng() * (deckLen - k)) | 0);
-          var t = deck[j]; deck[j] = deck[k]; deck[k] = t;
+        if (ranged) {
+          // 先洗出公共牌
+          for (var bk = 0; bk < need; bk++) {
+            var bj = bk + ((rng() * (deckLen - bk)) | 0);
+            var bt = deck[bj]; deck[bj] = deck[bk]; deck[bk] = bt;
+          }
+          // 再给每个对手抽两张，抽到不在范围内的就放回重抽
+          var pos = need;
+          for (var op = 0; op < oppCount; op++) {
+            var i1 = pos, i2 = pos + 1;
+            for (var tr = 0; tr < 60; tr++) {
+              i1 = pos + ((rng() * (deckLen - pos)) | 0);
+              i2 = pos + ((rng() * (deckLen - pos)) | 0);
+              if (i1 === i2) continue;
+              if (PFL.percentile(deck[i1], deck[i2]) <= maxPctl) break;
+            }
+            var s1 = deck[i1]; deck[i1] = deck[pos]; deck[pos] = s1;
+            if (i2 === pos) i2 = i1;                      // 刚才那次交换把它挪走了
+            var s2 = deck[i2]; deck[i2] = deck[pos + 1]; deck[pos + 1] = s2;
+            pos += 2;
+          }
+        } else {
+          // 部分 Fisher-Yates：只洗出需要的前 draw 张
+          for (var k = 0; k < draw; k++) {
+            var j = k + ((rng() * (deckLen - k)) | 0);
+            var t = deck[j]; deck[j] = deck[k]; deck[k] = t;
+          }
         }
         for (var b = 0; b < need; b++) comm[board.length + b] = deck[b];
         h7[2] = comm[0]; h7[3] = comm[1]; h7[4] = comm[2]; h7[5] = comm[3]; h7[6] = comm[4];

@@ -2,7 +2,7 @@
 // 版本由主线程通过 worker.js?v=xx 传进来，保证和页面用的是同一份引擎
 var V = (self.location.search.match(/v=([^&]+)/) || [])[1];
 var q = V ? '?v=' + V : '';
-importScripts('engine.js' + q, 'sim.js' + q);
+importScripts('engine.js' + q, 'sim.js' + q, 'preflop.js' + q);
 
 self.onmessage = function (e) {
   var msg = e.data;
@@ -20,6 +20,7 @@ self.onmessage = function (e) {
         players: msg.players,
         maxIterations: msg.maxIterations,
         timeLimitMs: msg.timeLimitMs,
+        oppMaxPctl: msg.oppMaxPctl,
         onProgress: function (p) {
           self.postMessage({ type: 'progress', id: id, result: p });
         }

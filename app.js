@@ -18,13 +18,14 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v14';
+  var APP_VERSION = 'v15';
 
   var state = {
     hero: [null, null],
     board: [null, null, null, null, null],
     tableSize: 6,        // 桌上一共几人，一局一局不变
     seat: -1,            // 我在座位环里的下标，用于逐手轮转
+    oppLevel: 'loose',   // 对手水平，决定按多强的范围给对手发牌
     players: 6,          // 这一手还剩几人没弃牌（含我）
     pot: '',
     call: '',
@@ -54,6 +55,7 @@
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
         if (typeof s.seat === 'number') state.seat = s.seat;
+        if (OPP_LEVELS.some(function (l) { return l.k === s.oppLevel; })) state.oppLevel = s.oppLevel;
       }
     } catch (e) {}
   }
@@ -175,8 +177,23 @@
     });
   }
 
+  function renderOppLevel() {
+    var box = $('oppLevel');
+    box.innerHTML = '';
+    OPP_LEVELS.forEach(function (l) {
+      var b = document.createElement('button');
+      b.textContent = l.n;
+      if (l.k === state.oppLevel) b.className = 'on';
+      b.addEventListener('click', function () {
+        state.oppLevel = l.k; renderOppLevel(); save(); compute();
+      });
+      box.appendChild(b);
+    });
+  }
+
   function renderBettors() {
     renderPos();
+    renderOppLevel();
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
@@ -298,7 +315,7 @@
       try {
         var part = PokerSim.simulate({
           hero: hero, board: board, players: state.players,
-          maxIterations: CHUNK, timeLimitMs: 0
+          maxIterations: CHUNK, timeLimitMs: 0, oppMaxPctl: oppPctl()
         });
         acc = acc ? mergeResults(acc, part) : part;
       } catch (err) {
@@ -373,11 +390,17 @@
 
     worker.postMessage({
       type: 'run', id: id, hero: hero, board: board, players: state.players,
-      maxIterations: 250000, timeLimitMs: 1600
+      maxIterations: 250000, timeLimitMs: 1600, oppMaxPctl: oppPctl()
     });
   }
 
   /* 不指定小数位时自动挑精度：0.02% 不该显示成 0.0%，那看起来像「不可能」。 */
+  /* 不是按随机牌算的时候要讲清楚，否则用户会以为胜率算低了 */
+  function rangeNote() {
+    var p = oppPctl();
+    return p >= 1 ? '' : ' · 按对手前 ' + Math.round(p * 100) + '% 的牌估算';
+  }
+
   function pct(x, d) {
     if (d !== undefined) return (x * 100).toFixed(d) + '%';
     var v = x * 100;
@@ -433,10 +456,10 @@
       if (r.win === 0 && r.tie === 0) {
         // 一次都没赢时报「±0」是骗人的，改成给出真实胜率的上界
         $('eqNote').textContent = '模拟 ' + wan + ' 万次一次没赢 · 真实胜率不超过 '
-          + marginStr(r.margin) + '%' + (done ? '' : ' …');
+          + marginStr(r.margin) + '%' + rangeNote() + (done ? '' : ' …');
       } else {
         $('eqNote').textContent = '模拟 ' + wan + ' 万次 · 误差 ±' + marginStr(r.margin) + '%'
-          + (done ? '' : ' …');
+          + rangeNote() + (done ? '' : ' …');
       }
     }
     renderDist(r);
@@ -516,6 +539,24 @@
 
   /* 位置。翻牌前盲注是在庄家之后行动的，所以不能用「后面还有几人」来推——
      那样庄位会数出小盲大盲两个人，被判成很紧的范围，而实际庄位开得最宽。 */
+  /* 一个大盲多少筹码。翻牌前没人加注时你面对的就是这个数，
+     所以「需跟注 ≤ 一个大盲」等价于「底池还没被加注」。 */
+  var BIG_BLIND = 2;
+
+  /* 对手水平 → 只从最强的前多少比例起手牌里给对手发牌。
+     对手敢投钱说明范围强于随机，但娱乐局的人是真的什么牌都玩，
+     模拟显示对松散对手收窄范围反而亏钱，所以默认按随机牌算。 */
+  var OPP_LEVELS = [
+    { k: 'loose',  n: '娱乐局', pctl: 1 },
+    { k: 'normal', n: '一般',   pctl: 0.55 },
+    { k: 'tight',  n: '老手',   pctl: 0.30 }
+  ];
+  function oppPctl() {
+    for (var i = 0; i < OPP_LEVELS.length; i++)
+      if (OPP_LEVELS[i].k === state.oppLevel) return OPP_LEVELS[i].pctl;
+    return 1;
+  }
+
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
     { k: 'btn', n: '庄位' }, { k: 'sb', n: '小盲' }, { k: 'bb', n: '大盲' }
@@ -599,7 +640,9 @@
     // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
     // 你赢的是盲注，而全下均分完全没有弃牌率这回事。
     // 正确做法是看这手牌在 169 手起手牌里的强度排位，再对照位置该开多宽。
-    if (state.board.every(function (c) { return c === null; }) && call <= 0 && window.PokerPreflop) {
+    var preflopUnraised = state.board.every(function (c) { return c === null; })
+      && call <= BIG_BLIND;   // 翻牌前只需跟一个大盲，说明还没人加注
+    if (preflopUnraised && window.PokerPreflop) {
       var pctl = PokerPreflop.percentile(state.hero[0], state.hero[1]);
 
       // 大盲位没人加注，就是免费看翻牌，不存在开不开池的问题
@@ -719,8 +762,9 @@
         if (what === 'new') {
           // 开新一局：牌和金额清掉；人数恢复成桌上总人数；
           // 庄家挪一位，我的位置也跟着顺延一格
-          state.pot = ''; state.call = '';
-          $('pot').value = ''; $('call').value = '';
+          // 新一局：底池清零，需跟注回到一个大盲——这就是每手开始的样子
+          state.pot = '0'; state.call = String(BIG_BLIND);
+          $('pot').value = state.pot; $('call').value = state.call;
           state.players = state.tableSize;
           advanceSeat();
           state.hideHero = true;   // 新一局默认盖着，想看点一下牌背
