@@ -217,3 +217,7 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
   border-radius:7px;padding:3px 9px;font-size:11px;color:var(--muted)}
 .hdr-money input{width:52px;padding:2px 0;font-size:14px;font-weight:600;
   text-align:right;font-variant-numeric:tabular-nums;color:var(--txt)}
+
+/* 桌上总人数：设一次就不动了，缩成一个小输入框跟在「还剩」后面 */
+.money-lbl.tight{flex:0 0 52px;padding:0 7px;gap:3px}
+.money-lbl.tight input{width:100%;font-size:13px;padding:5px 0}

@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v25';
+  var APP_VERSION = 'v26';
 
   var state = {
     hero: [null, null],
@@ -127,40 +127,24 @@
   }
 
   // ---------- 人数 ----------
+  /* 「还剩几人」每手都要改，用按钮；桌上总人数设一次就不动，用小输入框。
+     按钮只渲染到总人数为止，不再摆一排点不动的灰按钮。 */
   function renderPlayers() {
-    // 桌上总人数：一局一局不变，新一局时「还剩」恢复到这个数
-    var tbox = $('tableSize');
-    tbox.innerHTML = '';
-    for (var t = 2; t <= 10; t++) {
-      (function (t) {
-        var b = document.createElement('button');
-        b.textContent = t;
-        if (t === state.tableSize) b.className = 'on';
-        b.addEventListener('click', function () {
-          state.tableSize = t;
-          if (state.players > t) state.players = t;
-          state.seat = posCycle().indexOf(state.pos);   // 换桌型要重新定位座位
-          renderPlayers(); renderBettors(); save(); compute();
-        });
-        tbox.appendChild(b);
-      })(t);
-    }
-    // 还剩几人：不可能多于桌上总人数
+    $('tableSize').value = String(state.tableSize);
     var box = $('players');
     box.innerHTML = '';
-    for (var p = 2; p <= 10; p++) {
+    for (var p = 2; p <= state.tableSize; p++) {
       (function (p) {
         var b = document.createElement('button');
         b.textContent = p;
         if (p === state.players) b.className = 'on';
-        if (p > state.tableSize) b.className = 'off';
         b.addEventListener('click', function () {
-          if (p > state.tableSize) return;
           state.players = p; renderPlayers(); renderBettors(); save(); compute();
         });
         box.appendChild(b);
       })(p);
     }
+    box.style.gridTemplateColumns = 'repeat(' + (state.tableSize - 1) + ',1fr)';
   }
 
   function renderPos() {
@@ -752,13 +736,14 @@
       var open = openRange();
       // 起手牌排位是按单挑胜率排的，会严重低估同花连张在多人底池的价值：
       // T9s 单挑排前 35%，8 人桌的胜率却比排前 13% 的 KJo 还高。
-      // 所以娱乐局（人人进池）额外看一眼多人胜率，够格就便宜跟一手。
+      // 所以只要不是硬桌子，都额外看一眼多人胜率，够格就便宜跟一手；
+      // 只有「老手」档禁掉——对好对手跛入是送钱。
       var early = state.pos === 'early' || state.pos === 'mid';
       var limpBar = early ? 1.25 : 1.10;
       var v0, c0, act, isRaise = false;
       if (pctl <= open) {
         v0 = '开池加注'; c0 = 'good'; act = '在范围内'; isRaise = true;
-      } else if (state.oppLevel === 'loose' && ratio >= limpBar) {
+      } else if (state.oppLevel !== 'tight' && ratio >= limpBar) {
         v0 = actText('跟注', call > 0 ? call : BIG_BLIND); c0 = 'good';
         act = '不够开池，但 ' + state.players + ' 人桌胜率 <b>' + pct(eq)
           + '</b> 是均分的 <b>' + ratio.toFixed(2) + ' 倍</b>，便宜跟一手看翻牌';
@@ -882,6 +867,17 @@
     $('deck').addEventListener('click', function (e) {
       var b = e.target.closest('.pick');
       if (b) pickCard(parseInt(b.dataset.card, 10));
+    });
+    $('tableSize').addEventListener('input', function () {
+      var v = parseInt($('tableSize').value, 10);
+      if (!(v >= 2 && v <= 10)) return;
+      state.tableSize = v;
+      if (state.players > v) state.players = v;
+      state.seat = posCycle().indexOf(state.pos);   // 换桌型要重新定位座位
+      renderPlayers(); renderBettors(); save(); compute();
+    });
+    $('tableSize').addEventListener('blur', function () {
+      $('tableSize').value = String(state.tableSize);   // 输了非法值就恢复
     });
     $('toggleDist').addEventListener('click', function () {
       state.showDist = !state.showDist;
