@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v36';
+  var APP_VERSION = 'v37';
 
   var state = {
     hero: [null, null],
@@ -820,7 +820,12 @@
     var out = $('oddsOut');
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
 
-    var potNow = state.pot;                // 中间现在一共多少，已含对手的注
+    /* 底池要和胜率用同一套假设。既然按「会有 N 个对手跟到摊牌」算胜率，
+       就得承认他们的钱也会进池：下注那个人的注已经含在底池里，
+       其余每个跟注的人再各投一笔。
+       只算对手数不算他们的钱，等于双重悲观——胜率被压低、赔率也被压低。 */
+    var extraCallers = Math.max(0, showdownPlayers() - 2);
+    var potNow = state.pot + extraCallers * state.call;
     // 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手，
     // 赔率要按实际投进去的钱算
     var call = state.stack > 0 ? Math.min(state.call, state.stack) : state.call;
@@ -972,7 +977,9 @@
     else { verdict = actText('跟注', call); cls = 'good'; }
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
-      + '底池 <b>' + chips(potNow) + '</b>，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
+      + '底池 <b>' + chips(potNow) + '</b>'
+      + (extraCallers > 0 ? '（含 ' + extraCallers + ' 人跟注）' : '')
+      + '，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
       + (rf !== 1 ? '，按位置折算 <b>' + pct(eqR) + '</b>' : '')
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
       + '跟注的期望收益 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
