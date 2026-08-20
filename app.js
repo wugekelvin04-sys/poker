@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v51';
+  var APP_VERSION = 'v52';
 
   var state = {
     hero: [null, null],
@@ -583,14 +583,24 @@
   }
 
   function renderResult(r, done) {
-    $('eqValue').textContent = eqNum(r.equity);
-    setBar(r.winRate, r.tieRate, r.loseRate);
-    $('legWin').textContent = pct(r.winRate);
-    $('legTie').textContent = pct(r.tieRate);
-    $('legLose').textContent = pct(r.loseRate);
+    /* 盖着牌的时候，胜率本身就是最扎眼的泄密——旁边的人扫一眼看到 92%
+       就知道你有大牌了。连同胜负条、坚果标一起遮住。
+       所有元素照常渲染，只是内容换成占位符，高度一格不动。 */
+    if (state.hideHero) {
+      $('eqValue').textContent = '••';
+      setBar(0, 0, 0);
+      $('legWin').textContent = $('legTie').textContent = $('legLose').textContent = '••';
+      $('nutsFlag').textContent = '';
+    } else {
+      $('eqValue').textContent = eqNum(r.equity);
+      setBar(r.winRate, r.tieRate, r.loseRate);
+      $('legWin').textContent = pct(r.winRate);
+      $('legTie').textContent = pct(r.tieRate);
+      $('legLose').textContent = pct(r.loseRate);
 
-    // 坚果牌只用一个小标签标出来，不再解释原理
-    $('nutsFlag').textContent = (r.lose === 0 && r.n > 1000) ? '坚果·不可能输' : '';
+      // 坚果牌只用一个小标签标出来，不再解释原理
+      $('nutsFlag').textContent = (r.lose === 0 && r.n > 1000) ? '坚果·不可能输' : '';
+    }
 
     setBusy(!done);
 
@@ -645,15 +655,17 @@
     }
 
     var max = Math.max.apply(null, r.catCounts) || 1;
+    var hide = state.hideHero;   // 分布形状本身就能反推出手牌
     var html = '';
     for (var i = 8; i >= 0; i--) {
       var p = r.catCounts[i];
-      var w = max > 0 ? (p / max * 100) : 0;
+      var w = hide ? 0 : (max > 0 ? (p / max * 100) : 0);
       html += '<div class="dist-row' + (markCur && i === curCat ? ' cur' : '')
-        + (p < 0.0005 ? ' zero' : '') + '">'
+        + (!hide && p < 0.0005 ? ' zero' : '') + '">'
         + '<span class="nm">' + E.CAT_NAMES[i] + '</span>'
         + '<span class="tr"><span class="fl" style="width:' + w.toFixed(1) + '%"></span></span>'
-        + '<span class="vl">' + (p < 0.0005 ? '—' : pct(p, p < 0.01 ? 2 : 1)) + '</span></div>';
+        + '<span class="vl">' + (hide ? '••' : p < 0.0005 ? '—' : pct(p, p < 0.01 ? 2 : 1))
+        + '</span></div>';
     }
     box.innerHTML = html;
   }
@@ -964,7 +976,19 @@
   }
 
 
+  /* 盖着牌的时候，行动建议只留结论。中间那几行（你有多少胜率、期望多少）
+     全是从手牌推出来的，旁边的人扫一眼就知道你强不强。
+     在出口处统一裁剪，所有分支都覆盖得到，以后新加分支也不会漏。
+     找不到结论标签的（「填入底池金额」这类提示）本来就不泄密，原样保留。 */
   function renderOdds() {
+    renderOddsFull();
+    if (!state.hideHero) return;
+    var out = $('oddsOut');
+    var v = out.querySelector('.verdict');
+    if (v) out.innerHTML = v.outerHTML;
+  }
+
+  function renderOddsFull() {
     var out = $('oddsOut');
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
 
@@ -1019,7 +1043,7 @@
         v0 = '开池加注'; c0 = 'good'; act = '在范围内'; isRaise = true;
       } else if (state.oppLevel !== 'tight' && ratio >= limpBar) {
         v0 = actText('跟注', call > 0 ? call : BIG_BLIND); c0 = 'good';
-        act = '不够开池，但 ' + state.players + ' 人桌胜率 <b>' + pct(eq)
+        act = '不够开池，但 ' + state.players + ' 人桌胜率 <b>' + (pct(eq))
           + '</b> 是均分的 <b>' + ratio.toFixed(2) + ' 倍</b>，便宜跟一手看翻牌';
       } else if (pctl <= open * 1.35) {
         v0 = '边缘'; c0 = 'even'; act = '略超范围，桌子松可以开';
@@ -1071,7 +1095,7 @@
         + posName() + '面对 ' + (level / BIG_BLIND).toFixed(1) + 'BB 加注：跟<b>前 '
         + (d.call * 100).toFixed(1) + '%</b>／再加<b>前 '
         + (d.three * 100).toFixed(1) + '%</b>，本手<b>前 '
-        + (dp * 100).toFixed(1) + '%</b> → ' + why
+        + ((dp * 100).toFixed(1) + '%') + '</b> → ' + why
         + '<br><span class="caveat">翻牌前按范围判断，不看赔率</span>';
       return;
     }
@@ -1087,14 +1111,14 @@
       var ratioR = eqR / fair;
       if (ratioR >= 2) {
         verdict1 = actText('下注', potNow * 0.75); cls1 = 'good';
-        why1 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
+        why1 = '胜率 <b>' + (pct(eq)) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
           + pct(fair) + '</b>，下 ¾ 池要价值。';
       } else if (ratioR >= 1.3) {
         verdict1 = actText('下注', potNow * 0.5); cls1 = 'good';
-        why1 = '胜率 <b>' + pct(eq) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
+        why1 = '胜率 <b>' + (pct(eq)) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
       } else {
         verdict1 = '过牌'; cls1 = 'even';
-        why1 = '胜率 <b>' + pct(eq) + '</b> 没到 ' + state.players + ' 人桌均分的 <b>'
+        why1 = '胜率 <b>' + (pct(eq)) + '</b> 没到 ' + state.players + ' 人桌均分的 <b>'
           + pct(fair) + '</b>，先别投钱。';
       }
       out.innerHTML = '<span class="verdict ' + cls1 + '">' + verdict1 + '</span>' + why1
@@ -1129,10 +1153,10 @@
           ? '＝' + chips(state.pot) + '+' + (paidNow + extraCallers) + '×' + chips(state.call)
           : '')
       + ' · 需 <b>' + pct(required) + '</b><br>'
-      + '你有 <b>' + pct(eq) + '</b>'
-      + (rf !== 1 ? ' → 按位置 <b>' + pct(eqR) + '</b>' : '')
-      + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）'
-      + ' · 期望 <b>' + (ev >= 0 ? '+' : '−') + chips(Math.abs(ev)) + '</b>';
+      + '你有 <b>' + (pct(eq)) + '</b>'
+      + (rf !== 1 ? ' → 按位置 <b>' + (pct(eqR)) + '</b>' : '')
+      + '（' + (edge >= 0 ? '多 ' : '差 ') + (pct(Math.abs(edge))) + '）'
+      + ' · 期望 <b>' + ((ev >= 0 ? '+' : '−') + chips(Math.abs(ev))) + '</b>';
     if (!state.board.every(function (c) { return c === null; })) html += posNote;
     if (state.board.every(function (c) { return c === null; })) {
       // 翻牌前对手敢下注，他的牌一定强于随机牌，而胜率是按随机牌算的
