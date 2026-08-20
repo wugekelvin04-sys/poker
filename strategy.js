@@ -75,8 +75,17 @@
     return g.board.every(function (c) { return c === null; });
   }
 
+  /* 翻牌前判断有没有人加注，必须看「他加到了多少」，不能看「我还欠多少」——
+     这两个数只有在我没投过钱时才相等。
+     我在大盲已经投了 2，别人最小加注到 4 时我只欠 2，用「欠的钱 > 大盲」
+     判断就会得出「没人加注」，于是走进「大盲免费看翻牌」分支输出「过牌」。
+     实测拿 AA 面对最小加注也建议过牌——而过牌根本不是合法选项，我欠着 2 块。
+     任意两张牌最小加注就能白偷这个大盲。
+     正确的量是 call + posted：
+       大盲无人加注 0+2=2、小盲无人加注 1+1=2、其他位置无人加注 2+0=2，都不算加注；
+       任何人加到 4，这个值就是 4，一律算加注。 */
   function facingBet(g) {
-    return isPreflop(g) ? g.call > BIG_BLIND : g.call > 0;
+    return isPreflop(g) ? (g.call + posted(g)) > BIG_BLIND : g.call > 0;
   }
 
   function oppLevel(g) {
@@ -185,7 +194,11 @@
     return {
       players: showdownPlayers(g),
       seed: scenarioSeed(g),
-      oppMaxPctl: board.length >= 3 ? 1 : activePctl(g),
+      /* 牌面筛要至少三张牌才跑得起来。翻牌无人下注时筛选牌面退回两张
+         （大家还没对翻牌做过决定），牌面筛失效——这时如果还把起手牌筛
+         也关掉（oppMaxPctl=1），对手范围就退化成完全随机牌，胜率被系统性高估，
+         于是拿底对也去下半池。两个筛至少要留一个。 */
+      oppMaxPctl: (board.length >= 3 && filterLen(g) >= 3) ? 1 : activePctl(g),
       oppBoardTop: board.length >= 3 ? activePctl(g) : undefined,
       oppStrong: strongOppCount(g),
       oppWideTop: wideTopPctl(g),
@@ -226,9 +239,14 @@
   function raiseTier(g, level) {
     var bb = level / BIG_BLIND;
     var exp = TIER_EXP[g.oppLevel] === undefined ? 0.70 : TIER_EXP[g.oppLevel];
-    var mult = bb <= 2.5 ? 1 : Math.pow(2.5 / bb, exp);
+    /* 曲线在 2.5BB 两侧都要延伸。原来是 bb<=2.5 一律取 1，
+       意味着最小加注（2BB）和标准开池（2.5BB）买到的弃牌率完全一样——
+       那对手当然只用最小加注，成本低 20% 效果相同。
+       加得越小我该防守得越宽，这才是对的。上限 1.6 是防止
+       输入一个极小的「要跟」把范围放到荒唐。 */
+    var mult = Math.pow(2.5 / bb, exp);
     var name = bb <= 4.5 ? '开池加注' : bb <= 16 ? '3-bet 再加注' : '4-bet';
-    return { mult: Math.max(0.05, Math.min(1, mult)), name: name };
+    return { mult: Math.max(0.05, Math.min(1.6, mult)), name: name };
   }
 
   // ---------------- 金额与文字 ----------------
@@ -285,10 +303,13 @@
     var split = facingBet(g) ? actionSplit(g) : { called: 0, willCall: 0 };
     var paidNow = facingBet(g) ? calledCount(g) : 0;
     var extraCallers = split.willCall;
-    var potNow = g.pot + (paidNow + extraCallers) * g.call;
-    // 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手，
-    // 赔率要按实际投进去的钱算
+    /* 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手。
+       关键是底池也必须按这个封顶后的数算：以前分子封了顶、分母没封，
+       对手随便报一个巨大的数字就能把「所需胜率」压到接近 0——
+       我只剩 40、底池 100，他推 400，算出来只需 7.4% 胜率（真实 22.2%），
+       于是拿 J4o 也全下。这不是模型偏保守，是纯粹的定价错误。 */
     var call = g.stack > 0 ? Math.min(g.call, g.stack) : g.call;
+    var potNow = g.pot + (paidNow + extraCallers) * call;
 
     var eq = r.equity;
     var fair = 1 / g.players;              // 均分时每人应得的份额
@@ -305,7 +326,7 @@
     // 不能拿「多人全下的均分份额」当标尺——真实牌局大多数时候大家都弃牌了，
     // 你赢的是盲注，而全下均分完全没有弃牌率这回事。
     // 正确做法是看这手牌在 169 手起手牌里的强度排位，再对照位置该开多宽。
-    var preflopUnraised = isPreflop(g) && call <= BIG_BLIND;
+    var preflopUnraised = isPreflop(g) && (call + posted(g)) <= BIG_BLIND;
     if (preflopUnraised && PF) {
       var pctl = PF.percentile(g.hero[0], g.hero[1]);
 
@@ -396,12 +417,16 @@
       }
       var verdict1, cls1, why1, a2, amt2;
       var ratioR = eqR / fair;
-      if (ratioR >= 2) {
+      /* 「均分份额」这把标尺在人少时会失效：单挑 fair=0.5，要下 ¾ 池得 eqR≥1.0，
+         而无位置时 eqR = eq×0.93 ≤ 0.93，数学上永远达不到——拿着坚果也只会
+         下半池。加注门槛同理要 86% 原始胜率。所以再开一条绝对胜率的通道，
+         人多时不受影响（比例那条更容易先满足）。 */
+      if (ratioR >= 2 || eqR >= 0.70) {
         amt2 = betSize(potNow * 0.75);
         verdict1 = actText(g, '下注', amt2); cls1 = 'good'; a2 = 'bet';
         why1 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + g.players + ' 人桌均分的 <b>'
           + pct(fair) + '</b>，下 ¾ 池要价值。';
-      } else if (ratioR >= 1.3) {
+      } else if (ratioR >= 1.3 || eqR >= 0.55) {
         amt2 = betSize(potNow * 0.5);
         verdict1 = actText(g, '下注', amt2); cls1 = 'good'; a2 = 'bet';
         why1 = '胜率 <b>' + pct(eq) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
@@ -433,7 +458,7 @@
     var verdict, cls, a3, amt3;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; a3 = 'fold'; amt3 = 0; }
     else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; a3 = 'marginal'; amt3 = call; }
-    else if (eqR >= 1.6 * fair && edge >= 0.15) {
+    else if ((eqR >= 1.6 * fair || eqR >= 0.65) && edge >= 0.15) {
       amt3 = betSize(raiseTo);
       verdict = actText(g, '加注到', amt3); cls = 'good'; a3 = 'raise';
     } else {
@@ -443,8 +468,8 @@
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
       + '底池 <b>' + chips(potNow) + '</b>'
-      + (g.call > 0
-          ? '＝' + chips(g.pot) + '+' + (paidNow + extraCallers) + '×' + chips(g.call)
+      + (call > 0
+          ? '＝' + chips(g.pot) + '+' + (paidNow + extraCallers) + '×' + chips(call)
           : '')
       + ' · 需 <b>' + pct(required) + '</b><br>'
       + '你有 <b>' + pct(eq) + '</b>'
