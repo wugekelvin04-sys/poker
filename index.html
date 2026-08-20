@@ -10,17 +10,16 @@
 <meta name="apple-mobile-web-app-title" content="胜率">
 <meta name="theme-color" content="#0b0e13">
 <meta name="color-scheme" content="dark">
-<link rel="manifest" href="manifest.webmanifest?v=v39">
+<link rel="manifest" href="manifest.webmanifest?v=v41">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v39">
+<link rel="stylesheet" href="style.css?v=v41">
 </head>
 <body>
 
 <header id="result" class="result">
   <div class="eq-label">我的胜率</div>
-  <div class="eq-main"><span id="eqValue">—</span><span class="eq-unit">%</span></div>
-  <div class="eq-note" id="eqNote">先选好自己的两张手牌</div>
+  <div class="eq-main"><span id="eqValue">—</span><span class="eq-unit">%</span><span class="nuts-flag" id="nutsFlag"></span></div>
   <div class="bar" id="bar">
     <span class="seg-w" id="barWin"></span><span class="seg-t" id="barTie"></span><span class="seg-l" id="barLose"></span>
   </div>
@@ -29,7 +28,6 @@
     <span><i class="dot dot-t"></i>平分 <b id="legTie">—</b></span>
     <span><i class="dot dot-l"></i>输 <b id="legLose">—</b></span>
   </div>
-  <div class="eq-explain" id="eqExplain" hidden></div>
 </header>
 
 <main>
@@ -68,7 +66,7 @@
     </div>
     <div class="seat-row" id="posRow"><span class="seat-lbl">我的位置</span><div class="seg pos" id="pos"></div></div>
     <div class="seat-row" id="potRow">
-      <label class="money-lbl">底池<input id="pot" type="text" inputmode="numeric" autocomplete="off"></label>
+      <label class="money-lbl">原底池<input id="pot" type="text" inputmode="numeric" autocomplete="off"></label>
       <div class="seg money" id="potSeg"></div>
     </div>
     <div class="seat-row" id="calledRow"><span class="seat-lbl">已跟几人<em>?=不确定</em></span><div class="seg" id="called"></div></div>
@@ -76,7 +74,7 @@
       <label class="money-lbl">要跟<input id="call" type="text" inputmode="numeric" autocomplete="off"></label>
       <div class="seg money" id="callSeg"></div>
     </div>
-    <p class="hint" id="hintRow">底池 = 中间现在一共多少，已含他下的注；要跟填 0 = 没人下注</p>
+    <p class="hint" id="hintRow">原底池 = 本轮下注<b>之前</b>的底池，一整轮不用改；本轮下的注由「已跟几人」自动算</p>
     <div class="odds-out" id="oddsOut">填入底池金额</div>
   </section>
 
@@ -95,10 +93,10 @@
   <div class="deck" id="deck"></div>
 </section>
 
-<script src="engine.js?v=v39"></script>
-<script src="sim.js?v=v39"></script>
-<script src="preflop.js?v=v39"></script>
-<script src="app.js?v=v39"></script>
+<script src="engine.js?v=v41"></script>
+<script src="sim.js?v=v41"></script>
+<script src="preflop.js?v=v41"></script>
+<script src="app.js?v=v41"></script>
 <script>
 /* 自愈：万一缓存里 HTML 和 JS 版本对不上导致初始化失败，
    自动清掉缓存重新加载一次，避免用户面对一个死掉的界面。

@@ -31,13 +31,12 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 }
 .eq-label{font-size:12px;color:var(--dim);letter-spacing:.08em}
 .eq-main{display:flex;align-items:baseline;gap:3px;margin:1px 0 2px}
-#eqValue{
+#eqValue{transition:opacity .15s;
   font-size:30px;line-height:1.08;font-weight:700;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;font-feature-settings:"tnum";
   transition:color .25s;
 }
 .eq-unit{font-size:15px;font-weight:600;color:var(--muted)}
-.eq-note{font-size:12px;color:var(--dim);min-height:17px;font-variant-numeric:tabular-nums}
 .bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--panel-2);margin:8px 0 6px}
 .bar span{transition:width .25s ease}
 .seg-w{background:var(--win)} .seg-t{background:var(--tie)} .seg-l{background:var(--lose)}
@@ -45,8 +44,6 @@ h2 em{font-style:normal;color:var(--dim);font-weight:400;margin-left:7px;font-si
 .legend b{font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
 .dot-w{background:var(--win)} .dot-t{background:var(--tie)} .dot-l{background:var(--lose)}
-.eq-explain{font-size:11px;color:var(--dim);margin-top:4px;line-height:1.45}
-.eq-explain b{color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums}
 
 /* ---------- 面板 ---------- */
 main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:column;gap:7px}
@@ -222,4 +219,6 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .money-lbl.tight{flex:0 0 52px;padding:0 7px;gap:3px}
 .money-lbl.tight input{width:100%;font-size:13px;padding:5px 0}
 
-.eq-explain b.nuts{color:var(--win)}
+
+/* 坚果牌标签：挂在大数字旁边，不另占一行 */
+.nuts-flag{margin-left:8px;font-size:11px;font-weight:600;color:var(--win)}

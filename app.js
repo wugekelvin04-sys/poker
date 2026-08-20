@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v39';
+  var APP_VERSION = 'v41';
 
   var state = {
     hero: [null, null],
@@ -197,19 +197,22 @@
       box.appendChild(b);
     });
     // 底池这一行多一个累加键：每有一个人跟注就点一下，不用心算
+    // 底池这一行两侧加减键，步长跟着当前档位走，方便凑出 260 这种数
     if (key === 'pot') {
-      var add = document.createElement('button');
-      add.className = 'add';
-      add.textContent = state.call > 0 ? '+' + chips(state.call) : '+';
-      if (state.call <= 0) add.className += ' off';
-      add.addEventListener('click', function () {
-        if (state.call <= 0) return;
-        state.pot = Math.round(state.pot + state.call);
-        $('pot').value = String(state.pot);
-        renderMoney(boxId, key, presets);
-        save(); refresh();
+      var st = potStep();
+      [['−', -st], ['+', st]].forEach(function (pair) {
+        var b = document.createElement('button');
+        b.className = 'add';
+        b.textContent = pair[0] + Math.abs(pair[1]);
+        if (state.pot + pair[1] < 0) b.className += ' off';
+        b.addEventListener('click', function () {
+          state.pot = Math.max(0, Math.round(state.pot + pair[1]));
+          $('pot').value = state.pot ? String(state.pot) : '';
+          renderMoney(boxId, key, presets);
+          save(); refresh();
+        });
+        box.appendChild(b);
       });
-      box.appendChild(add);
     }
   }
 
@@ -253,7 +256,9 @@
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
     // 盲注位已经投过钱，只需补差额，而且那笔钱已经算在底池里了。
     // 不提醒的话很容易把整笔下注额填进「要跟」，把所需胜率抬到离谱。
-    $('hintRow').textContent = '底池 = 中间现在一共多少，已含他下的注；要跟填 0 = 没人下注';
+    $('hintRow').textContent = preflop
+      ? '翻牌前只看位置和起手牌，不用填金额'
+      : '原底池 = 本轮下注前的底池，一整轮不用改；本轮下的注自动算';
   }
 
   // ---------- 选牌抽屉 ----------
@@ -351,13 +356,13 @@
     if (id !== runId) return;
     stopWorker();
     clearTimeout(mainLoopTimer);
-    if (!window.PokerSim) { $('eqNote').textContent = '计算模块没能加载，刷新试试'; return; }
+    if (!window.PokerSim) { setBusy(false); return; }
 
     if (board.length === 5 && showdownPlayers() === 2) {
       try {
         var ex = PokerSim.enumerateShowdownHeadsUp(hero, board, 1, activePctl());
         lastResult = ex; renderResult(ex, true);
-      } catch (err) { $('eqNote').textContent = '出错：' + String((err && err.message) || err); }
+      } catch (err) { setBusy(false); }
       return;
     }
 
@@ -377,14 +382,10 @@
           oppFilterLen: filterLen()
         });
         acc = acc ? mergeResults(acc, part) : part;
-      } catch (err) {
-        $('eqNote').textContent = '出错：' + String((err && err.message) || err);
-        return;
-      }
+      } catch (err) { setBusy(false); return; }
       var done = acc.n >= TARGET || Date.now() - started > BUDGET;
       lastResult = acc;
       renderResult(acc, done);
-      $('eqNote').textContent += ' · 主线程';
       if (!done) mainLoopTimer = setTimeout(step, 0);
     }
     mainLoopTimer = setTimeout(step, 0);
@@ -407,7 +408,7 @@
     if (hero.length < 2) {
       lastResult = null;
       $('eqValue').textContent = '—';
-      $('eqNote').textContent = '先选好自己的两张手牌';
+      setBusy(false);
       setBar(0, 0, 0);
       $('legWin').textContent = $('legTie').textContent = $('legLose').textContent = '—';
       $('dist').innerHTML = '';
@@ -416,9 +417,9 @@
       return;
     }
     // 牌桌上的人手牌加公共牌不能超过一副牌
-    if (2 * state.players + 5 > 52) { $('eqNote').textContent = '人数过多'; return; }
+    if (2 * state.players + 5 > 52) return;
 
-    $('eqNote').textContent = '计算中…';
+    setBusy(true);
     var id = runId;
 
     try {
@@ -436,7 +437,7 @@
     worker.onmessage = function (e) {
       var m = e.data;
       if (m.id !== runId) return;
-      if (m.type === 'error') { $('eqNote').textContent = '出错：' + m.message; stopWorker(); return; }
+      if (m.type === 'error') { setBusy(false); stopWorker(); return; }
       clearTimeout(fallbackTimer); fallbackTimer = null;
       lastResult = m.result;
       renderResult(m.result, m.type === 'done');
@@ -461,20 +462,7 @@
 
   /* 不指定小数位时自动挑精度：0.02% 不该显示成 0.0%，那看起来像「不可能」。 */
   /* 不是按随机牌算的时候要讲清楚，否则用户会以为胜率算低了 */
-  function showdownNote() {
-    var sp = showdownPlayers();
-    return sp !== state.players
-      ? ' · 按会跟到底的 ' + (sp - 1) + ' 名对手估算（其余还没说话，多半会弃）' : '';
-  }
 
-  function rangeNote() {
-    var p = activePctl();
-    if (p >= 1) return showdownNote();
-    // 翻牌前按起手牌排位筛，翻牌后按「在这个牌面上有多强」筛
-    return (boardCount() >= 3
-      ? ' · 按对手在此牌面前 ' + Math.round(p * 100) + '% 的牌估算'
-      : ' · 按对手前 ' + Math.round(p * 100) + '% 的起手牌估算') + showdownNote();
-  }
 
   /* 金额变了：只有当对手范围口径也跟着变时才值得重算胜率，
      否则光刷新建议就够，免得每点一下按钮都重跑一次模拟。 */
@@ -484,6 +472,10 @@
     if (p !== lastPctl) { lastPctl = p; compute(); }
     else renderOdds();
   }
+
+  /* 计算中就把数字调淡，不再用一行文字说明——那行技术细节没人看，
+     还会因为长度变化导致切换人数时整页抖动 */
+  function setBusy(on) { $('eqValue').style.opacity = on ? '0.4' : '1'; }
 
   function pct(x, d) {
     if (d !== undefined) return (x * 100).toFixed(d) + '%';
@@ -505,10 +497,6 @@
     return '<0.01';
   }
 
-  function marginStr(m) {
-    var v = m * 100;
-    return v >= 0.1 ? v.toFixed(2) : v >= 0.01 ? v.toFixed(3) : v.toFixed(4);
-  }
 
   function setBar(w, t, l) {
     $('barWin').style.width = (w * 100) + '%';
@@ -523,37 +511,11 @@
     $('legTie').textContent = pct(r.tieRate);
     $('legLose').textContent = pct(r.loseRate);
 
-    // 胜率含平局分摊，和「独赢」不是一回事，容易被误会成算错了。
-    // 输 0% 更要挑明：那是坚果牌，只是常常要和人平分，胜率数字才显得不高。
-    var ex = $('eqExplain');
-    var nuts = r.lose === 0 && r.n > 1000;
-    if (nuts) {
-      ex.hidden = false;
-      ex.innerHTML = '<b class="nuts">坚果牌 · 不可能输</b>'
-        + (r.tieRate >= 0.005
-            ? '，但 <b>' + pct(r.tieRate) + '</b> 的情况要和人平分底池，所以胜率不是 100%'
-            : '');
-    } else if (r.tieRate >= 0.005) {
-      ex.hidden = false;
-      ex.innerHTML = '胜率 = 独赢 <b>' + pct(r.winRate) + '</b> + 平分底池折算的 <b>'
-        + pct(r.equity - r.winRate) + '</b>';
-    } else {
-      ex.hidden = true;
-    }
+    // 坚果牌只用一个小标签标出来，不再解释原理
+    $('nutsFlag').textContent = (r.lose === 0 && r.n > 1000) ? '坚果·不可能输' : '';
 
-    if (r.exact) {
-      $('eqNote').textContent = '精确枚举 ' + r.n.toLocaleString() + ' 种可能，无误差' + rangeNote();
-    } else {
-      var wan = (r.n / 10000).toFixed(r.n >= 100000 ? 0 : 1);
-      if (r.win === 0 && r.tie === 0) {
-        // 一次都没赢时报「±0」是骗人的，改成给出真实胜率的上界
-        $('eqNote').textContent = '模拟 ' + wan + ' 万次一次没赢 · 真实胜率不超过 '
-          + marginStr(r.margin) + '%' + rangeNote() + (done ? '' : ' …');
-      } else {
-        $('eqNote').textContent = '模拟 ' + wan + ' 万次 · 误差 ±' + marginStr(r.margin) + '%'
-          + rangeNote() + (done ? '' : ' …');
-      }
-    }
+    setBusy(!done);
+
     renderDist(r);
     renderOdds();
   }
@@ -750,7 +712,17 @@
   /* 底池和跟注都用快捷金额，牌桌上没法数清物理筹码，估个量级就够用。
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
      赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
-  var POT_PRESETS  = [10, 20, 50, 100, 200, 300];
+  /* 底池档位，以及每档对应的加减步长。步长约等于「到下一档距离的 20%」，
+     取整成好按的数：选 200 连按三下加号就是 260，选 500 一下加 100。 */
+  var POT_PRESETS = [20, 100, 200, 300, 500];
+  var POT_STEPS   = [5,  20,  20,  50,  100];
+
+  function potStep() {
+    var st = POT_STEPS[0];
+    for (var i = 0; i < POT_PRESETS.length; i++)
+      if (state.pot >= POT_PRESETS[i]) st = POT_STEPS[i];
+    return st;
+  }
   var CALL_PRESETS = [0, 2, 5, 10, 20, 30, 40, 50];
 
   var POS = [
@@ -878,14 +850,14 @@
     var out = $('oddsOut');
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
 
-    /* 底池要和胜率用同一套假设。既然按「会有 N 个对手跟到摊牌」算胜率，
-       就得承认他们的钱也会进池：下注那个人的注已经含在底池里，
-       其余每个跟注的人再各投一笔。
-       只算对手数不算他们的钱，等于双重悲观——胜率被压低、赔率也被压低。 */
-    // 只有排在我后面、还没说话的人会再往池子里加钱；
-    // 前面那些人的钱早就在「底池」里了，再加一遍就是重复计算。
-    var extraCallers = facingBet() ? actionSplit().willCall : 0;
-    var potNow = state.pot + extraCallers * state.call;
+    /* 底池填的是「本轮下注之前」的数额——一整轮里它都不变，牌桌上好记。
+       本轮投进去的钱由 App 自己乘出来：
+         实际底池 = 原始底池 + 已跟人数 × 要跟 + 后面预计跟的人 × 要跟
+       后半段必须算，否则就成了「把后面的人当对手却不算他们的钱」的双重悲观。 */
+    var split = facingBet() ? actionSplit() : { called: 0, willCall: 0 };
+    var paidNow = facingBet() ? calledCount() : 0;      // 本轮已经投钱的人数（含下注者）
+    var extraCallers = split.willCall;                  // 后面预计还会跟的人数
+    var potNow = state.pot + (paidNow + extraCallers) * state.call;
     // 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手，
     // 赔率要按实际投进去的钱算
     var call = state.stack > 0 ? Math.min(state.call, state.stack) : state.call;
@@ -1038,7 +1010,9 @@
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
       + '底池 <b>' + chips(potNow) + '</b>'
-      + (extraCallers > 0 ? '（含 ' + extraCallers + ' 人跟注）' : '')
+      + (state.call > 0
+          ? '（原 ' + chips(state.pot) + ' + ' + (paidNow + extraCallers) + '×' + chips(state.call) + '）'
+          : '')
       + '，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
       + (rf !== 1 ? '，按位置折算 <b>' + pct(eqR) + '</b>' : '')
       + '（' + (edge >= 0 ? '多 ' : '差 ') + pct(Math.abs(edge)) + '）<br>'
