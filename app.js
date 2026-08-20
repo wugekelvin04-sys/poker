@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v32';
+  var APP_VERSION = 'v33';
 
   var state = {
     hero: [null, null],
@@ -679,9 +679,13 @@
      范围差别巨大，用同一张防守表会松得离谱——所以按尺度整体缩放。 */
   function raiseTier(level) {
     var bb = level / BIG_BLIND;
-    if (bb <= 4.5) return { mult: 1.00, name: '开池加注' };
-    if (bb <= 16)  return { mult: 0.35, name: '3-bet 再加注' };
-    return           { mult: 0.18, name: '4-bet' };
+    // 连续曲线，不是三个硬台阶——否则加到 4.4BB 和 4.6BB 会掉进完全
+    // 不同的档，而同一档内加多少又完全不影响判断。
+    // 以标准开池 2.5BB 为基准，加得越大防守越紧：
+    //   3BB→0.87  4BB→0.70  6BB→0.52  10BB→0.35  25BB→0.18
+    var mult = bb <= 2.5 ? 1 : Math.pow(2.5 / bb, 0.76);
+    var name = bb <= 4.5 ? '开池加注' : bb <= 16 ? '3-bet 再加注' : '4-bet';
+    return { mult: Math.max(0.05, Math.min(1, mult)), name: name };
   }
 
   var DEFEND = {
@@ -849,7 +853,12 @@
 
     // ---- 翻牌前面对加注：查防守范围，不看底池赔率 ----
     if (state.board.every(function (c) { return c === null; }) && window.PokerPreflop) {
-      var dp = PokerPreflop.percentile(state.hero[0], state.hero[1]);
+      // 面对加注要用「对加注范围的胜率」排位，不能用「对随机牌」那张。
+      // 77 对随机牌 66% 排前 4.2%，对前 20% 范围只有 49% 排前 7.1%——
+      // 用错表会把它排在 AKo 前面，面对 3-bet、4-bet 都建议跟注。
+      var dp = PokerPreflop.vsRaise
+        ? PokerPreflop.vsRaise(state.hero[0], state.hero[1])
+        : PokerPreflop.percentile(state.hero[0], state.hero[1]);
       var d0 = DEFEND[state.pos] || DEFEND.mid;
       var level = call + posted();               // 他加到了多少
       var tier = raiseTier(level);
