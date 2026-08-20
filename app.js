@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v23';
+  var APP_VERSION = 'v24';
 
   var state = {
     hero: [null, null],
@@ -29,6 +29,7 @@
     players: 6,          // 这一手还剩几人没弃牌（含我）
     pot: 100,
     call: 0,
+    stack: 200,          // 我手上还有多少筹码，建议不能超过它
     pos: 'mid',          // 我的位置，决定开池范围
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
@@ -52,6 +53,7 @@
         if (s.players >= 2 && s.players <= state.tableSize) state.players = s.players;
         if (typeof s.pot === 'number') state.pot = s.pot;
         if (typeof s.call === 'number') state.call = s.call;
+        if (typeof s.stack === 'number') state.stack = s.stack;
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
@@ -230,6 +232,7 @@
     renderOppLevel();
     renderMoney('potSeg', 'pot', POT_PRESETS);
     renderMoney('callSeg', 'call', CALL_PRESETS);
+    renderMoney('stackSeg', 'stack', STACK_PRESETS);
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
@@ -621,6 +624,7 @@
      赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
   var POT_PRESETS  = [10, 20, 50, 100, 200, 300];
   var CALL_PRESETS = [0, 2, 5, 10, 20, 30, 40, 50];
+  var STACK_PRESETS = [50, 100, 200, 300, 500, 1000];
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
@@ -702,13 +706,27 @@
   /* 筹码都是整数，任何金额一律取整，别报出 7.5 这种数 */
   function chips(x) { return String(Math.round(x)); }
 
+  /* 任何建议都不能超过手上的筹码，超了就是全下 */
+  function sized(x) {
+    var st = state.stack;
+    if (st > 0 && x >= st) return { text: '全下 ' + chips(st), allin: true };
+    return { text: chips(x), allin: false };
+  }
+  /* 下注/加注类的判词，全下时不再说「加注到」 */
+  function actText(verb, x) {
+    var r = sized(x);
+    return r.allin ? r.text : verb + ' ' + r.text;
+  }
+
 
   function renderOdds() {
     var out = $('oddsOut');
     if (!lastResult) { out.textContent = '先选好自己的两张手牌'; return; }
 
     var potNow = state.pot;                // 中间现在一共多少，已含对手的注
-    var call = state.call;                 // 我要跟多少
+    // 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手，
+    // 赔率要按实际投进去的钱算
+    var call = state.stack > 0 ? Math.min(state.call, state.stack) : state.call;
 
     var eq = lastResult.equity;
     var fair = 1 / state.players;          // 均分时每人应得的份额
@@ -743,7 +761,7 @@
       if (pctl <= open) {
         v0 = '开池加注'; c0 = 'good'; act = '在范围内'; isRaise = true;
       } else if (state.oppLevel === 'loose' && ratio >= limpBar) {
-        v0 = '跟注 ' + chips(call > 0 ? call : BIG_BLIND); c0 = 'good';
+        v0 = actText('跟注', call > 0 ? call : BIG_BLIND); c0 = 'good';
         act = '不够开池，但 ' + state.players + ' 人桌胜率 <b>' + pct(eq)
           + '</b> 是均分的 <b>' + ratio.toFixed(2) + ' 倍</b>，便宜跟一手看翻牌';
       } else if (pctl <= open * 1.35) {
@@ -757,7 +775,7 @@
         // 标准开池尺度：2.5 倍大盲（小盲位 3 倍），场上每有一个跛入者再加一个大盲，
         // 而跛入进来的钱正好就是「原底池」。
         var to = (state.pos === 'sb' ? 3 : 2.5) * BIG_BLIND;
-        v0 = '开池加注到 ' + chips(to);
+        v0 = actText('开池加注到', to);
         act += '，' + (state.pos === 'sb' ? '3' : '2.5') + ' 倍大盲';
       }
       out.innerHTML = '<span class="verdict ' + c0 + '">' + v0 + '</span>'
@@ -776,10 +794,10 @@
       if (dp <= d.three) {
         // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
         var ip = state.pos === 'btn' || state.pos === 'late';
-        v1 = '再加注到 ' + chips(level * (ip ? 3 : 4)); c1 = 'good';
+        v1 = actText('再加注到', level * (ip ? 3 : 4)); c1 = 'good';
         why = '这手牌够强，值得反打施压' + (ip ? '（有位置，3 倍即可）' : '（没位置，打到 4 倍）') + '。';
       } else if (dp <= d.call) {
-        v1 = '跟注 ' + chips(call); c1 = 'good';
+        v1 = actText('跟注', call); c1 = 'good';
         why = '在防守范围内，跟一手看翻牌。';
       } else {
         v1 = '弃牌 ✕'; c1 = 'bad';
@@ -803,11 +821,11 @@
       }
       var verdict1, cls1, why1;
       if (ratio >= 2) {
-        verdict1 = '下注 ' + chips(potNow * 0.75); cls1 = 'good';
+        verdict1 = actText('下注', potNow * 0.75); cls1 = 'good';
         why1 = '胜率 <b>' + pct(eq) + '</b> 远高于 ' + state.players + ' 人桌均分的 <b>'
           + pct(fair) + '</b>，下 ¾ 池要价值。';
       } else if (ratio >= 1.3) {
-        verdict1 = '下注 ' + chips(potNow * 0.5); cls1 = 'good';
+        verdict1 = actText('下注', potNow * 0.5); cls1 = 'good';
         why1 = '胜率 <b>' + pct(eq) + '</b> 略高于均分的 <b>' + pct(fair) + '</b>，下 ½ 池薄价值。';
       } else {
         verdict1 = '过牌'; cls1 = 'even';
@@ -837,8 +855,8 @@
     var verdict, cls;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; }
     else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; }
-    else if (eq >= 1.6 * fair && edge >= 0.15) { verdict = '加注到 ' + chips(raiseTo); cls = 'good'; }
-    else { verdict = '跟注 ' + chips(call); cls = 'good'; }
+    else if (eq >= 1.6 * fair && edge >= 0.15) { verdict = actText('加注到', raiseTo); cls = 'good'; }
+    else { verdict = actText('跟注', call); cls = 'good'; }
 
     var html = '<span class="verdict ' + cls + '">' + verdict + '</span>'
       + '底池 <b>' + chips(potNow) + '</b>，需 <b>' + pct(required) + '</b> 胜率，你有 <b>' + pct(eq) + '</b>'
@@ -905,15 +923,15 @@
       });
     });
 
-    ['pot', 'call'].forEach(function (k) {
+    ['pot', 'call', 'stack'].forEach(function (k) {
       var el = $(k);
       el.value = state[k] ? String(state[k]) : '';
       el.addEventListener('input', function () {
         var v = parseFloat(el.value);
         state[k] = isFinite(v) && v > 0 ? Math.round(v) : 0;
         save();
-        renderMoney(k === 'pot' ? 'potSeg' : 'callSeg', k,
-          k === 'pot' ? POT_PRESETS : CALL_PRESETS);
+        renderMoney(k + 'Seg', k,
+          k === 'pot' ? POT_PRESETS : k === 'call' ? CALL_PRESETS : STACK_PRESETS);
         renderBettors(); refresh();
       });
       // 点进来光标会落在数字中间，很难改。直接全选，打字即覆盖。

@@ -209,3 +209,5 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 /* 底池累加键：每有一个人跟注点一下 */
 .seg button.add{background:#1d3350;color:var(--accent);font-weight:600}
 .seg button.add.off{opacity:.3;pointer-events:none}
+
+#stackSeg{grid-template-columns:repeat(6,1fr)}
