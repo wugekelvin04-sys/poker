@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v20';
+  var APP_VERSION = 'v21';
 
   var state = {
     hero: [null, null],
@@ -208,6 +208,21 @@
       });
       box.appendChild(b);
     });
+    // 底池这一行多一个累加键：每有一个人跟注就点一下，不用心算
+    if (key === 'pot') {
+      var add = document.createElement('button');
+      add.className = 'add';
+      add.textContent = state.call > 0 ? '+' + chips(state.call) : '+';
+      if (state.call <= 0) add.className += ' off';
+      add.addEventListener('click', function () {
+        if (state.call <= 0) return;
+        state.pot = Math.round((state.pot + state.call) * 10) / 10;
+        $('pot').value = String(state.pot);
+        renderMoney(boxId, key, presets);
+        save(); refresh();
+      });
+      box.appendChild(add);
+    }
   }
 
   function renderBettors() {
@@ -605,7 +620,7 @@
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
      赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
   var POT_PRESETS  = [10, 20, 50, 100, 200, 300];
-  var CALL_PRESETS = [0, 2, 5, 10, 15, 20, 25, 30, 50];
+  var CALL_PRESETS = [0, 2, 5, 10, 20, 30, 40, 50];
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },

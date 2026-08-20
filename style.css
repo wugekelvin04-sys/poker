@@ -196,8 +196,8 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
 .seg.lvl{grid-template-columns:repeat(3,1fr)}
 .seg.lvl button{font-size:12px}
 
-#potSeg{grid-template-columns:repeat(6,1fr)}
-#callSeg{grid-template-columns:repeat(9,1fr)}
+#potSeg{grid-template-columns:repeat(7,1fr)}
+#callSeg{grid-template-columns:repeat(8,1fr)}
 .seg.money button{font-size:11px;padding:6px 0}
 
 /* 金额行：左边是可直接输入的小框，右边是快捷金额 */
@@ -205,3 +205,7 @@ main{padding:9px 12px calc(var(--safe-b) + 12px);display:flex;flex-direction:col
   background:var(--panel-2);border-radius:8px;padding:0 8px;font-size:11px;color:var(--muted)}
 .money-lbl input{flex:1;min-width:0;width:100%;padding:6px 0;font-size:14px;font-weight:600;
   text-align:right;font-variant-numeric:tabular-nums;color:var(--txt)}
+
+/* 底池累加键：每有一个人跟注点一下 */
+.seg button.add{background:#1d3350;color:var(--accent);font-weight:600}
+.seg button.add.off{opacity:.3;pointer-events:none}
