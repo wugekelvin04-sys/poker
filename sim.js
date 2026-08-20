@@ -27,6 +27,45 @@
     return rng;
   }
 
+  /* 翻牌后对手的范围该按「和这个牌面配合得怎样」筛，而不是起手牌排位。
+     牌面 2-5-6 上 34 打成顺子却排在起手牌的后 5%，AK 只是 A 高却排前 5%——
+     按起手牌筛出来的范围，废牌比随机范围还多，方向是反的。 */
+  var PAIR_FLOOR = 1 << 20;      // 一对这一档的下限
+
+  function boardStrength(c1, c2, board, bn) {
+    var hand = [c1, c2];
+    for (var i = 0; i < bn; i++) hand.push(board[i]);
+    var sc = evalHand(hand, bn + 2);
+    if (bn < 5 && sc < PAIR_FLOOR) {
+      // 还有牌要发时，强听牌不能当废牌筛掉：四张同花或四张连牌，至少按一对看
+      var suit = [0, 0, 0, 0], mask = (1 << (c1 >> 2)) | (1 << (c2 >> 2));
+      suit[c1 & 3]++; suit[c2 & 3]++;
+      for (var k = 0; k < bn; k++) { suit[board[k] & 3]++; mask |= 1 << (board[k] >> 2); }
+      var draw = suit[0] === 4 || suit[1] === 4 || suit[2] === 4 || suit[3] === 4;
+      if (!draw) {
+        for (var h = 12; h >= 3; h--) {
+          var run = 0xF << (h - 3);
+          if ((mask & run) === run) { draw = true; break; }
+        }
+      }
+      if (draw) sc = PAIR_FLOOR;
+    }
+    return sc;
+  }
+
+  /* 取「牌面契合度」前 topFrac 的分界分值，之后用它做拒绝采样 */
+  function boardCutoff(deck, board, topFrac) {
+    var bn = board.length, keys = [];
+    for (var i = 0; i < deck.length; i++)
+      for (var j = i + 1; j < deck.length; j++)
+        keys.push(boardStrength(deck[i], deck[j], board, bn));
+    keys.sort(function (a, b) { return b - a; });
+    var idx = Math.floor(topFrac * keys.length) - 1;
+    if (idx < 0) idx = 0;
+    if (idx >= keys.length) idx = keys.length - 1;
+    return keys[idx];
+  }
+
   function buildDeck(used) {
     var seen = new Uint8Array(52), deck = [];
     for (var i = 0; i < used.length; i++) {
@@ -75,6 +114,11 @@
     var maxPctl = o.oppMaxPctl === undefined ? 1 : o.oppMaxPctl;
     var PFL = global.PokerPreflop;
     var ranged = maxPctl < 1 && PFL && oppCount > 0;   // 拿不到排位表就退回随机牌
+    // 翻牌后改按牌面契合度筛，比起手牌排位准得多
+    var boardTop = o.oppBoardTop;
+    var byBoard = boardTop !== undefined && boardTop < 1 && board.length >= 3 && oppCount > 0;
+    var cutoff = byBoard ? boardCutoff(deck, board, boardTop) : 0;
+    if (byBoard) ranged = false;
     var comm = new Int32Array(5);
     var h7 = new Int32Array(7), o7 = new Int32Array(7);
     for (var i = 0; i < board.length; i++) comm[i] = board[i];
@@ -87,7 +131,29 @@
     while (n < maxIter) {
       var target = Math.min(n + batchSize, maxIter);
       for (; n < target; n++) {
-        if (ranged) {
+        if (byBoard) {
+          // 先洗公共牌
+          for (var bk2 = 0; bk2 < need; bk2++) {
+            var bj2 = bk2 + ((rng() * (deckLen - bk2)) | 0);
+            var bt2 = deck[bj2]; deck[bj2] = deck[bk2]; deck[bk2] = bt2;
+          }
+          // 对手手牌必须在「当前牌面」上够强；判定只看已经翻出来的牌，
+          // 因为他做决定时也只看得到这些
+          var pos2 = need;
+          for (var op2 = 0; op2 < oppCount; op2++) {
+            var a1 = pos2, a2 = pos2 + 1;
+            for (var t2 = 0; t2 < 80; t2++) {
+              a1 = pos2 + ((rng() * (deckLen - pos2)) | 0);
+              a2 = pos2 + ((rng() * (deckLen - pos2)) | 0);
+              if (a1 === a2) continue;
+              if (boardStrength(deck[a1], deck[a2], board, board.length) >= cutoff) break;
+            }
+            var q1 = deck[a1]; deck[a1] = deck[pos2]; deck[pos2] = q1;
+            if (a2 === pos2) a2 = a1;
+            var q2 = deck[a2]; deck[a2] = deck[pos2 + 1]; deck[pos2 + 1] = q2;
+            pos2 += 2;
+          }
+        } else if (ranged) {
           // 先洗出公共牌
           for (var bk = 0; bk < need; bk++) {
             var bj = bk + ((rng() * (deckLen - bk)) | 0);
@@ -160,15 +226,24 @@
   /**
    * 精确枚举：仅用于单挑（2 人）且公共牌已发满 5 张的摊牌场景。
    * 未知组合只有 C(45,2)=990 种，瞬间算完且零误差。
+   * @param {number} [maxPctl=1] 只枚举落在最强前这么多比例的对手手牌。
+   *        限定范围后仍是精确解，只是枚举的样本空间变小了。
    */
-  function enumerateShowdownHeadsUp(hero, board) {
+  function enumerateShowdownHeadsUp(hero, board, maxPctl, boardTop) {
     var deck = buildDeck(hero.concat(board));
     var h7 = hero.concat(board);
     var heroScore = evalHand(h7, 7);
     var o7 = board.concat([0, 0]);
     var win = 0, tie = 0, lose = 0, total = 0;
+    var mp = maxPctl === undefined ? 1 : maxPctl;
+    var PFL = global.PokerPreflop;
+    var byBoard = boardTop !== undefined && boardTop < 1;
+    var cut = byBoard ? boardCutoff(deck, board, boardTop) : 0;
+    var ranged = !byBoard && mp < 1 && PFL;
     for (var i = 0; i < deck.length; i++) {
       for (var j = i + 1; j < deck.length; j++) {
+        if (byBoard) { if (boardStrength(deck[i], deck[j], board, board.length) < cut) continue; }
+        else if (ranged && PFL.percentile(deck[i], deck[j]) > mp) continue;
         o7[5] = deck[i]; o7[6] = deck[j];
         var s = evalHand(o7, 7);
         if (heroScore > s) win++; else if (heroScore < s) lose++; else tie++;
@@ -177,6 +252,8 @@
     }
     var catCounts = new Array(9).fill(0);
     catCounts[heroScore >>> 20] = 1;
+    if (!total) return { n: 0, win: 0, tie: 0, lose: 0, winRate: 0, tieRate: 0,
+      loseRate: 0, equity: 0.5, margin: 0, catCounts: catCounts, exact: true, elapsed: 0 };
     return {
       n: total, win: win, tie: tie, lose: lose,
       winRate: win / total, tieRate: tie / total, loseRate: lose / total,
@@ -189,6 +266,8 @@
     makeRng: makeRng,
     buildDeck: buildDeck,
     simulate: simulate,
+    boardStrength: boardStrength,
+    boardCutoff: boardCutoff,
     enumerateShowdownHeadsUp: enumerateShowdownHeadsUp
   };
 })(typeof self !== 'undefined' ? self : this);

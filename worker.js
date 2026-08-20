@@ -12,7 +12,7 @@ self.onmessage = function (e) {
     var res;
     // 摊牌单挑时未知组合仅 C(45,2)=990 种，直接精确枚举，零误差
     if (msg.board.length === 5 && msg.players === 2) {
-      res = PokerSim.enumerateShowdownHeadsUp(msg.hero, msg.board);
+      res = PokerSim.enumerateShowdownHeadsUp(msg.hero, msg.board, msg.oppMaxPctl, msg.oppBoardTop);
     } else {
       res = PokerSim.simulate({
         hero: msg.hero,
@@ -21,6 +21,7 @@ self.onmessage = function (e) {
         maxIterations: msg.maxIterations,
         timeLimitMs: msg.timeLimitMs,
         oppMaxPctl: msg.oppMaxPctl,
+        oppBoardTop: msg.oppBoardTop,
         onProgress: function (p) {
           self.postMessage({ type: 'progress', id: id, result: p });
         }

@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v29';
+  var APP_VERSION = 'v31';
 
   var state = {
     hero: [null, null],
@@ -330,7 +330,7 @@
 
     if (board.length === 5 && state.players === 2) {
       try {
-        var ex = PokerSim.enumerateShowdownHeadsUp(hero, board);
+        var ex = PokerSim.enumerateShowdownHeadsUp(hero, board, 1, activePctl());
         lastResult = ex; renderResult(ex, true);
       } catch (err) { $('eqNote').textContent = '出错：' + String((err && err.message) || err); }
       return;
@@ -344,7 +344,9 @@
       try {
         var part = PokerSim.simulate({
           hero: hero, board: board, players: state.players,
-          maxIterations: CHUNK, timeLimitMs: 0, oppMaxPctl: activePctl()
+          maxIterations: CHUNK, timeLimitMs: 0,
+          oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
+          oppBoardTop: board.length >= 3 ? activePctl() : undefined
         });
         acc = acc ? mergeResults(acc, part) : part;
       } catch (err) {
@@ -419,7 +421,9 @@
 
     worker.postMessage({
       type: 'run', id: id, hero: hero, board: board, players: state.players,
-      maxIterations: 250000, timeLimitMs: 1600, oppMaxPctl: activePctl()
+      maxIterations: 250000, timeLimitMs: 1600,
+      oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
+      oppBoardTop: board.length >= 3 ? activePctl() : undefined
     });
     lastPctl = activePctl();
   }
@@ -428,7 +432,11 @@
   /* 不是按随机牌算的时候要讲清楚，否则用户会以为胜率算低了 */
   function rangeNote() {
     var p = activePctl();
-    return p >= 1 ? '' : ' · 按对手前 ' + Math.round(p * 100) + '% 的牌估算';
+    if (p >= 1) return '';
+    // 翻牌前按起手牌排位筛，翻牌后按「在这个牌面上有多强」筛
+    return boardCount() >= 3
+      ? ' · 按对手在此牌面前 ' + Math.round(p * 100) + '% 的牌估算'
+      : ' · 按对手前 ' + Math.round(p * 100) + '% 的起手牌估算';
   }
 
   /* 金额变了：只有当对手范围口径也跟着变时才值得重算胜率，
@@ -497,7 +505,7 @@
     }
 
     if (r.exact) {
-      $('eqNote').textContent = '精确枚举 ' + r.n.toLocaleString() + ' 种可能，无误差';
+      $('eqNote').textContent = '精确枚举 ' + r.n.toLocaleString() + ' 种可能，无误差' + rangeNote();
     } else {
       var wan = (r.n / 10000).toFixed(r.n >= 100000 ? 0 : 1);
       if (r.win === 0 && r.tie === 0) {
@@ -591,26 +599,48 @@
   /* 对手水平 → 只从最强的前多少比例起手牌里给对手发牌。
      对手敢投钱说明范围强于随机，但娱乐局的人是真的什么牌都玩，
      模拟显示对松散对手收窄范围反而亏钱，所以默认按随机牌算。 */
+  /* 两套系数，因为两个「前 X%」含义完全不同：
+     pctl  —— 翻牌前按起手牌排位筛，前 30% 就是 88+/AJ+ 这类牌
+     board —— 翻牌后按牌面契合度筛，前 30% 在河牌上意味着「最弱也有一对 Q」，
+              直接套用会把对手范围收得离谱。实测这块合理区间在 55%~85%。 */
   var OPP_LEVELS = [
-    { k: 'loose',  n: '娱乐局', pctl: 1 },
-    { k: 'normal', n: '一般',   pctl: 0.55 },
-    { k: 'tight',  n: '老手',   pctl: 0.30 }
+    { k: 'loose',  n: '娱乐局', pctl: 1,    board: 0.85 },
+    { k: 'normal', n: '一般',   pctl: 0.55, board: 0.70 },
+    { k: 'tight',  n: '老手',   pctl: 0.30, board: 0.55 }
   ];
-  function oppPctl() {
+  function oppLevel() {
     for (var i = 0; i < OPP_LEVELS.length; i++)
-      if (OPP_LEVELS[i].k === state.oppLevel) return OPP_LEVELS[i].pctl;
-    return 1;
+      if (OPP_LEVELS[i].k === state.oppLevel) return OPP_LEVELS[i];
+    return OPP_LEVELS[0];
   }
+  function oppPctl() { return oppLevel().pctl; }
 
-  /* 有人往池子里投钱要我跟，才说明他的范围强于随机。
-     翻牌前没人加注时大家还没做任何选择，收窄范围反而是错的。 */
+  /* 有人往池子里投钱要我跟，说明他这条街还愿意加码 */
   function facingBet() {
     var preflop = state.board.every(function (c) { return c === null; });
     return preflop ? state.call > BIG_BLIND : state.call > 0;
   }
 
+  /* 每多打一条街，还留在牌里的人范围就更强一层——他已经为前面每条街
+     都付过钱了，跟这条街有没有下注无关。翻牌前没人加注是唯一的例外：
+     那时谁都还没做选择，范围确实接近随机。 */
+  // 翻牌后已经改按牌面契合度筛，本身就够狠了，逐街收窄的幅度要小得多
+  var STREET_TIGHTEN = { 0: 1, 3: 1, 4: 0.92, 5: 0.85 };
+
+  function boardCount() {
+    return state.board.filter(function (c) { return c !== null; }).length;
+  }
+
   /* 这一轮实际该用的对手范围 */
-  function activePctl() { return facingBet() ? oppPctl() : 1; }
+  function activePctl() {
+    var n = boardCount();
+    // 翻牌前且没人加注：大家都还没投钱，按随机牌算
+    if (n === 0 && !facingBet()) return 1;
+    var base = n >= 3 ? oppLevel().board : oppLevel().pctl;
+    var p = base * (STREET_TIGHTEN[n] || 1);
+    if (facingBet()) p *= 0.8;              // 这条街还敢下注，范围再强一层
+    return Math.max(0.05, Math.min(1, p));
+  }
 
   /* 底池和跟注都用快捷金额，牌桌上没法数清物理筹码，估个量级就够用。
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
