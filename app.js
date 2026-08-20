@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v26';
+  var APP_VERSION = 'v27';
 
   var state = {
     hero: [null, null],
@@ -476,9 +476,17 @@
     $('legTie').textContent = pct(r.tieRate);
     $('legLose').textContent = pct(r.loseRate);
 
-    // 胜率含平局分摊，和「独赢」不是一回事，容易被误会成算错了
+    // 胜率含平局分摊，和「独赢」不是一回事，容易被误会成算错了。
+    // 输 0% 更要挑明：那是坚果牌，只是常常要和人平分，胜率数字才显得不高。
     var ex = $('eqExplain');
-    if (r.tieRate >= 0.005) {
+    var nuts = r.lose === 0 && r.n > 1000;
+    if (nuts) {
+      ex.hidden = false;
+      ex.innerHTML = '<b class="nuts">坚果牌 · 不可能输</b>'
+        + (r.tieRate >= 0.005
+            ? '，但 <b>' + pct(r.tieRate) + '</b> 的情况要和人平分底池，所以胜率不是 100%'
+            : '');
+    } else if (r.tieRate >= 0.005) {
       ex.hidden = false;
       ex.innerHTML = '胜率 = 独赢 <b>' + pct(r.winRate) + '</b> + 平分底池折算的 <b>'
         + pct(r.equity - r.winRate) + '</b>';
