@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v19';
+  var APP_VERSION = 'v20';
 
   var state = {
     hero: [null, null],
@@ -204,7 +204,7 @@
         state[key] = v;
         $(key).value = v === 0 ? '' : String(v);
         renderMoney(boxId, key, presets);
-        renderBettors(); save(); renderOdds();
+        renderBettors(); save(); refresh();
       });
       box.appendChild(b);
     });
@@ -341,7 +341,7 @@
       try {
         var part = PokerSim.simulate({
           hero: hero, board: board, players: state.players,
-          maxIterations: CHUNK, timeLimitMs: 0, oppMaxPctl: oppPctl()
+          maxIterations: CHUNK, timeLimitMs: 0, oppMaxPctl: activePctl()
         });
         acc = acc ? mergeResults(acc, part) : part;
       } catch (err) {
@@ -416,15 +416,25 @@
 
     worker.postMessage({
       type: 'run', id: id, hero: hero, board: board, players: state.players,
-      maxIterations: 250000, timeLimitMs: 1600, oppMaxPctl: oppPctl()
+      maxIterations: 250000, timeLimitMs: 1600, oppMaxPctl: activePctl()
     });
+    lastPctl = activePctl();
   }
 
   /* 不指定小数位时自动挑精度：0.02% 不该显示成 0.0%，那看起来像「不可能」。 */
   /* 不是按随机牌算的时候要讲清楚，否则用户会以为胜率算低了 */
   function rangeNote() {
-    var p = oppPctl();
+    var p = activePctl();
     return p >= 1 ? '' : ' · 按对手前 ' + Math.round(p * 100) + '% 的牌估算';
+  }
+
+  /* 金额变了：只有当对手范围口径也跟着变时才值得重算胜率，
+     否则光刷新建议就够，免得每点一下按钮都重跑一次模拟。 */
+  var lastPctl = null;
+  function refresh() {
+    var p = activePctl();
+    if (p !== lastPctl) { lastPctl = p; compute(); }
+    else renderOdds();
   }
 
   function pct(x, d) {
@@ -580,6 +590,16 @@
       if (OPP_LEVELS[i].k === state.oppLevel) return OPP_LEVELS[i].pctl;
     return 1;
   }
+
+  /* 有人往池子里投钱要我跟，才说明他的范围强于随机。
+     翻牌前没人加注时大家还没做任何选择，收窄范围反而是错的。 */
+  function facingBet() {
+    var preflop = state.board.every(function (c) { return c === null; });
+    return preflop ? state.call > BIG_BLIND : state.call > 0;
+  }
+
+  /* 这一轮实际该用的对手范围 */
+  function activePctl() { return facingBet() ? oppPctl() : 1; }
 
   /* 底池和跟注都用快捷金额，牌桌上没法数清物理筹码，估个量级就够用。
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
@@ -872,7 +892,7 @@
         save();
         renderMoney(k === 'pot' ? 'potSeg' : 'callSeg', k,
           k === 'pot' ? POT_PRESETS : CALL_PRESETS);
-        renderBettors(); renderOdds();
+        renderBettors(); refresh();
       });
       // 点进来光标会落在数字中间，很难改。直接全选，打字即覆盖。
       el.addEventListener('focus', function () {
