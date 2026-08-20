@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v18';
+  var APP_VERSION = 'v19';
 
   var state = {
     hero: [null, null],
@@ -219,10 +219,12 @@
     var preflop = state.board.every(function (c) { return c === null; });
     $('posRow').hidden = !preflop;
     // 翻牌前没人加注时，开池与否只看起手牌和位置，底池金额用不上
-    var unraised = preflop && state.call <= BIG_BLIND;
-    $('potRow').hidden = unraised;
-    $('hintRow').hidden = unraised;
+    // 翻牌前完全不看底池，只看位置和起手牌范围
+    $('potRow').hidden = preflop;
+    $('hintRow').hidden = preflop;
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
+    // 盲注位已经投过钱，只需补差额，而且那笔钱已经算在底池里了。
+    // 不提醒的话很容易把整笔下注额填进「要跟」，把所需胜率抬到离谱。
     $('hintRow').textContent = '底池 = 中间现在一共多少，已含他下的注；要跟填 0 = 没人下注';
   }
 
@@ -582,7 +584,7 @@
   /* 底池和跟注都用快捷金额，牌桌上没法数清物理筹码，估个量级就够用。
      底池指的是「中间现在一共多少」，已经含对手刚下的注——这样
      赔率直接就是 跟注/(底池+跟注)，不用再管谁跟了谁没跟。 */
-  var POT_PRESETS  = [20, 50, 100, 200, 300, 500];
+  var POT_PRESETS  = [10, 20, 50, 100, 200, 300];
   var CALL_PRESETS = [0, 2, 5, 10, 15, 20, 25, 30, 50];
 
   var POS = [
@@ -596,6 +598,25 @@
     short: { early: 0.16, mid: 0.21, late: 0.28, btn: 0.45, sb: 0.42 },  // 6 人及以下
     full:  { early: 0.11, mid: 0.16, late: 0.24, btn: 0.42, sb: 0.40 }   // 7 人及以上
   };
+
+  /* 翻牌前面对加注时的防守范围（前百分之几）。
+     翻牌前不该用底池赔率判断——赔率是按对手拿随机牌算的，
+     而敢加注的人范围明显强于随机，算出来会系统性偏乐观。
+     标准做法是按位置查范围表：大盲价格最好所以防守最宽，
+     小盲虽然也投过钱但翻牌后全程没位置，反而要紧。 */
+  var DEFEND = {
+    early: { three: 0.03, call: 0.10 },
+    mid:   { three: 0.04, call: 0.14 },
+    late:  { three: 0.05, call: 0.20 },
+    btn:   { three: 0.06, call: 0.25 },
+    sb:    { three: 0.04, call: 0.18 },
+    bb:    { three: 0.04, call: 0.40 }
+  };
+
+  /* 我在盲注位已经投进去的钱，面对加注时只需补差额 */
+  function posted() {
+    return state.pos === 'bb' ? BIG_BLIND : state.pos === 'sb' ? BIG_BLIND / 2 : 0;
+  }
 
   function openRange() {
     var t = state.players >= 7 ? OPEN_RANGE.full : OPEN_RANGE.short;
@@ -704,6 +725,33 @@
       return;
     }
 
+    // ---- 翻牌前面对加注：查防守范围，不看底池赔率 ----
+    if (state.board.every(function (c) { return c === null; }) && window.PokerPreflop) {
+      var dp = PokerPreflop.percentile(state.hero[0], state.hero[1]);
+      var d = DEFEND[state.pos] || DEFEND.mid;
+      var level = call + posted();               // 他加到了多少
+      var v1, c1, why;
+      if (dp <= d.three) {
+        // 有位置 3 倍就够；没位置要打大一点，否则翻牌后每条街都难打
+        var ip = state.pos === 'btn' || state.pos === 'late';
+        v1 = '再加注到 ' + chips(level * (ip ? 3 : 4)); c1 = 'good';
+        why = '这手牌够强，值得反打施压' + (ip ? '（有位置，3 倍即可）' : '（没位置，打到 4 倍）') + '。';
+      } else if (dp <= d.call) {
+        v1 = '跟注 ' + chips(call); c1 = 'good';
+        why = '在防守范围内，跟一手看翻牌。';
+      } else {
+        v1 = '弃牌 ✕'; c1 = 'bad';
+        why = '超出' + posName() + '面对加注的防守范围。';
+      }
+      out.innerHTML = '<span class="verdict ' + c1 + '">' + v1 + '</span>'
+        + posName() + '面对加注：<b>前 ' + (d.call * 100).toFixed(0) + '%</b> 跟、<b>前 '
+        + (d.three * 100).toFixed(0) + '%</b> 再加，这手牌排<b>前 '
+        + (dp * 100).toFixed(0) + '%</b> → ' + why
+        + '<br><span class="caveat">翻牌前按起手牌范围判断，不用底池赔率——'
+        + '赔率是按对手随机牌算的，而敢加注的人范围强得多</span>';
+      return;
+    }
+
     // ---- 没人下注 ----
     if (call <= 0) {
       if (potNow <= 0) {
@@ -730,6 +778,15 @@
     }
 
     // ---- 有人下注 ----
+    // 底池是 0 却有人下注，说明底池没填。这时算出来必然是「需要 100% 胜率」，
+    // 数学上没错但毫无用处，直接说清楚要填什么。
+    if (potNow <= 0) {
+      out.innerHTML = '<span class="verdict even">底池没填</span>'
+        + '有人下注，底池就不会是 0。填一下中间现在一共多少'
+        + '（含盲注和他下的注），否则赔率算不出来。';
+      return;
+    }
+
     var required = call / (potNow + call);       // 跟注所需的最低胜率
     var ev = eq * (potNow + call) - call;        // 跟注的期望收益
     var edge = eq - required;
@@ -792,8 +849,11 @@
         if (what === 'new') {
           // 开新一局：底池清零、要跟回到一个大盲，这就是每手开始的样子。
           // 人数恢复成桌上总人数；庄家挪一位，我的位置也顺延一格。
-          state.pot = 0; state.call = BIG_BLIND;
-          $('pot').value = ''; $('call').value = String(BIG_BLIND);
+          // 每手一开始底池不是 0，而是两个盲注（小盲 + 大盲 = 1.5 个大盲）。
+          // 之前置成 0，一旦有人加注就会算出「需要 100% 胜率」，永远劝你弃牌。
+          state.pot = BIG_BLIND * 1.5;
+          state.call = BIG_BLIND;
+          $('pot').value = String(state.pot); $('call').value = String(BIG_BLIND);
           state.players = state.tableSize;
           advanceSeat();
           state.hideHero = true;   // 新一局默认盖着，想看点一下牌背
