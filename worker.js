@@ -23,6 +23,8 @@ self.onmessage = function (e) {
         oppMaxPctl: msg.oppMaxPctl,
         oppBoardTop: msg.oppBoardTop,
         oppStrong: msg.oppStrong,
+        oppWideTop: msg.oppWideTop,
+        oppFilterLen: msg.oppFilterLen,
         onProgress: function (p) {
           self.postMessage({ type: 'progress', id: id, result: p });
         }

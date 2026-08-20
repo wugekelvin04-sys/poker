@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v34';
+  var APP_VERSION = 'v35';
 
   var state = {
     hero: [null, null],
@@ -347,7 +347,9 @@
           maxIterations: CHUNK, timeLimitMs: 0,
           oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
           oppBoardTop: board.length >= 3 ? activePctl() : undefined,
-          oppStrong: strongOppCount()
+          oppStrong: strongOppCount(),
+          oppWideTop: wideTopPctl(),
+          oppFilterLen: filterLen()
         });
         acc = acc ? mergeResults(acc, part) : part;
       } catch (err) {
@@ -425,7 +427,9 @@
       maxIterations: 250000, timeLimitMs: 1600,
       oppMaxPctl: board.length >= 3 ? 1 : activePctl(),
       oppBoardTop: board.length >= 3 ? activePctl() : undefined,
-      oppStrong: strongOppCount()
+      oppStrong: strongOppCount(),
+      oppWideTop: wideTopPctl(),
+      oppFilterLen: filterLen()
     });
     lastPctl = activePctl();
   }
@@ -644,9 +648,21 @@
     return Math.max(0.65, Math.min(1, f));
   }
 
-  /* 有几个对手该按「强范围」处理。主动下注的那个肯定算，
-     再算一个可能跟注的；其余的人是跟着看牌，不该假设他们也很强。 */
+  /* 只有「这条街主动下注」的人才真的看着当前牌面做过决定，
+     才配用当前牌面筛范围。没人下注时，所有人都只是从上一条街跟过来的，
+     谁都不该按当前牌面算——包括那个我们本来当成强牌的。 */
   function strongOppCount() { return facingBet() ? 2 : 1; }
+
+  /* 「跟着看牌」那组的范围。没人下注时大家处境一样，不额外放宽；
+     有人下注时，没跟注的那些人范围明显更宽。 */
+  function wideTopPctl() { return Math.min(1, activePctl() * 2.5); }
+
+  /* 筛范围该用哪个牌面：本街有人下注就用当前的，
+     否则用少一张的——大家还没对刚翻开的这张做过决定 */
+  function filterLen() {
+    var n = boardCount();
+    return facingBet() ? n : Math.max(0, n - 1);
+  }
 
   function activePctl() {
     var n = boardCount();

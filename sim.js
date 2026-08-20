@@ -116,16 +116,23 @@
     var ranged = maxPctl < 1 && PFL && oppCount > 0;   // 拿不到排位表就退回随机牌
     // 翻牌后改按牌面契合度筛，比起手牌排位准得多
     var boardTop = o.oppBoardTop;
-    var byBoard = boardTop !== undefined && boardTop < 1 && board.length >= 3 && oppCount > 0;
+    /* 用来筛范围的牌面 = 最后一次有人行动时看到的牌面。
+       本街有人下注就用当前牌面；没人下注，说明大家只是从上一条街跟过来的，
+       还没对刚翻开的这张做过任何决定，那就用少一张的牌面。 */
+    var fLen = o.oppFilterLen === undefined ? board.length : o.oppFilterLen;
+    var fBoard = board.slice(0, fLen);
+    var byBoard = boardTop !== undefined && boardTop < 1 && fBoard.length >= 3 && oppCount > 0;
     if (byBoard) ranged = false;
     /* 只有主动投钱的那一两个人范围才真的强；剩下的人是跟着看牌的。
        把窄范围无差别套到每个对手身上，人越多复合得越离谱——8 人桌等于
        假设 7 个人同时拿着前 36% 的牌，那件事的概率是 0.36^7 ≈ 0.08%。 */
     var strongN = o.oppStrong === undefined ? oppCount : Math.min(o.oppStrong, oppCount);
-    var wideTop = Math.min(1, (byBoard ? boardTop : maxPctl) * 2.5);
-    var cutoff = byBoard ? boardCutoff(deck, board, boardTop) : 0;
-    var cutoffWide = (byBoard && strongN < oppCount)
-      ? boardCutoff(deck, board, wideTop) : cutoff;
+    var wideTop = o.oppWideTop !== undefined
+      ? Math.min(1, o.oppWideTop)
+      : Math.min(1, (byBoard ? boardTop : maxPctl) * 2.5);
+    var cutoff = byBoard ? boardCutoff(deck, fBoard, boardTop) : 0;
+    var wideByBoard = byBoard && strongN < oppCount && wideTop < 1;
+    var cutoffWide = wideByBoard ? boardCutoff(deck, fBoard, wideTop) : 0;
     var comm = new Int32Array(5);
     var h7 = new Int32Array(7), o7 = new Int32Array(7);
     for (var i = 0; i < board.length; i++) comm[i] = board[i];
@@ -149,12 +156,19 @@
           var pos2 = need;
           for (var op2 = 0; op2 < oppCount; op2++) {
             var a1 = pos2, a2 = pos2 + 1;
-            var cut2 = op2 < strongN ? cutoff : cutoffWide;
-            for (var t2 = 0; t2 < 80; t2++) {
+            var strong2 = op2 < strongN;
+            if (!strong2 && !wideByBoard) {
+              // 这组不筛，随机发
               a1 = pos2 + ((rng() * (deckLen - pos2)) | 0);
-              a2 = pos2 + ((rng() * (deckLen - pos2)) | 0);
-              if (a1 === a2) continue;
-              if (boardStrength(deck[a1], deck[a2], board, board.length) >= cut2) break;
+              do { a2 = pos2 + ((rng() * (deckLen - pos2)) | 0); } while (a2 === a1);
+            } else {
+              var cut2 = strong2 ? cutoff : cutoffWide;
+              for (var t2 = 0; t2 < 80; t2++) {
+                a1 = pos2 + ((rng() * (deckLen - pos2)) | 0);
+                a2 = pos2 + ((rng() * (deckLen - pos2)) | 0);
+                if (a1 === a2) continue;
+                if (boardStrength(deck[a1], deck[a2], fBoard, fLen) >= cut2) break;
+              }
             }
             var q1 = deck[a1]; deck[a1] = deck[pos2]; deck[pos2] = q1;
             if (a2 === pos2) a2 = a1;
