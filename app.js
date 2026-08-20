@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v37';
+  var APP_VERSION = 'v38';
 
   var state = {
     hero: [null, null],
@@ -30,6 +30,7 @@
     pot: 100,
     call: 0,
     stack: 200,          // 我手上还有多少筹码，建议不能超过它
+    called: 1,           // 已经把这笔钱投进池子的人数（含下注的那个）
     pos: 'mid',          // 我的位置，决定开池范围
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
@@ -54,6 +55,7 @@
         if (typeof s.pot === 'number') state.pot = s.pot;
         if (typeof s.call === 'number') state.call = s.call;
         if (typeof s.stack === 'number') state.stack = s.stack;
+        if (s.called >= 1 && s.called <= 9) state.called = s.called;
         state.hideHero = !!s.hideHero;
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
@@ -211,8 +213,30 @@
     }
   }
 
+  /* 已经把这笔钱投进池子的人数（含下注的那个） */
+  function renderCalled() {
+    var box = $('called');
+    var maxN = Math.max(1, state.players - 1);
+    if (state.called > maxN) state.called = maxN;
+    box.innerHTML = '';
+    for (var n = 1; n <= maxN; n++) {
+      (function (n) {
+        var b = document.createElement('button');
+        b.textContent = n;
+        if (n === state.called) b.className = 'on';
+        b.addEventListener('click', function () {
+          state.called = n; renderCalled(); save(); refresh();
+        });
+        box.appendChild(b);
+      })(n);
+    }
+    box.style.gridTemplateColumns = 'repeat(' + maxN + ',1fr)';
+  }
+
   function renderBettors() {
     renderPos();
+    renderCalled();
+    $('calledRow').hidden = !facingBet() || boardCount() === 0;
     renderOppLevel();
     renderMoney('potSeg', 'pot', POT_PRESETS);
     renderMoney('callSeg', 'call', CALL_PRESETS);
@@ -439,7 +463,7 @@
   function showdownNote() {
     var sp = showdownPlayers();
     return sp !== state.players
-      ? ' · 按会跟到底的 ' + (sp - 1) + ' 名对手估算（其余多半会弃）' : '';
+      ? ' · 按会跟到底的 ' + (sp - 1) + ' 名对手估算（其余还没说话，多半会弃）' : '';
   }
 
   function rangeNote() {
@@ -659,14 +683,39 @@
      谁都不该按当前牌面算——包括那个我们本来当成强牌的。 */
   function strongOppCount() { return facingBet() ? 2 : 1; }
 
-  /* 面对下注时，「还剩几人」里多数人会弃牌，不会都跟到摊牌。
-     按全员摊牌算会系统性低估强牌——8 人桌拿葫芦被算成 19.5% 建议弃牌，
-     可你真正要打败的通常只有 1~3 个人。
-     估法：下注那个人肯定跟到底，其余每人按 40% 计。 */
+  /* 翻牌后的行动顺序：小盲 → 大盲 → 前位 → 中位 → 后位 → 庄位。
+     位置决定了「还剩的人」里有几个排在我后面还没说话。 */
+  var BEHIND_FRAC = { sb: 1, bb: 0.85, early: 0.7, mid: 0.5, late: 0.25, btn: 0 };
+
+  function playersBehind() {
+    var opp = state.players - 1;
+    var f = BEHIND_FRAC[state.pos];
+    return Math.round(opp * (f === undefined ? 0.5 : f));
+  }
+
+  /* 谁会跟到摊牌，得分两拨人算：
+
+     排在我前面还没弃牌的人 —— 他们已经跟过这笔钱了，钱在底池里。
+     但底池大小反过来约束了这个数：底池 100、要跟 50 就只装得下约两笔，
+     不可能是七个人都跟了（那样底池至少 350）。
+
+     排在我后面的人 —— 还没说话，多数会弃，按 40% 计。只有他们
+     还会往池子里加钱。 */
+  function actionSplit() {
+    var opp = state.players - 1;
+    var behind = Math.min(playersBehind(), Math.max(0, opp - state.called));
+    // 已投钱的人由你直接告诉我，比从底池反推准——转牌河牌的底池里
+    // 还含着前几条街的钱，反推会把它误判成「很多人跟过」
+    var called = Math.max(0, Math.min(opp, state.called) - 1);   // 减掉下注者本人
+    var willCall = Math.round(behind * 0.4);
+    return { called: called, willCall: willCall, behind: behind };
+  }
+
   function showdownPlayers() {
     var opp = state.players - 1;
     if (!facingBet() || opp <= 1) return state.players;
-    return Math.max(1, Math.round(1 + 0.4 * (opp - 1))) + 1;
+    var a = actionSplit();
+    return Math.min(opp, Math.max(1, a.called + a.willCall + 1)) + 1;
   }
 
   /* 「跟着看牌」那组的范围。没人下注时大家处境一样，不额外放宽；
@@ -824,7 +873,9 @@
        就得承认他们的钱也会进池：下注那个人的注已经含在底池里，
        其余每个跟注的人再各投一笔。
        只算对手数不算他们的钱，等于双重悲观——胜率被压低、赔率也被压低。 */
-    var extraCallers = Math.max(0, showdownPlayers() - 2);
+    // 只有排在我后面、还没说话的人会再往池子里加钱；
+    // 前面那些人的钱早就在「底池」里了，再加一遍就是重复计算。
+    var extraCallers = facingBet() ? actionSplit().willCall : 0;
     var potNow = state.pot + extraCallers * state.call;
     // 筹码不够跟的话，实际只投得进这么多，多出来的会退还给对手，
     // 赔率要按实际投进去的钱算
