@@ -18,7 +18,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v49';
+  var APP_VERSION = 'v50';
 
   var state = {
     hero: [null, null],
@@ -139,6 +139,18 @@
     renderPlayers(); renderBettors(); save(); compute();
   }
 
+  function raiseOne() {
+    if (state.players >= state.tableSize) return;
+    state.players++;
+    renderPlayers(); renderBettors(); save(); compute();
+  }
+
+  function dropCalled() {
+    if (state.called <= 0) return;
+    state.called--;
+    renderCalled(); save(); refresh();
+  }
+
   function addOne() {
     var maxN = Math.max(1, state.players - 1);
     if (calledCount() >= maxN) return;
@@ -161,13 +173,10 @@
         box.appendChild(b);
       })(p);
     }
-    // 减号放在最左边，紧挨着标签，单手好按
-    var minus = document.createElement('button');
-    minus.className = 'add' + (state.players <= 2 ? ' off' : '');
-    minus.textContent = '−1';
-    minus.addEventListener('click', dropOne);
-    box.insertBefore(minus, box.firstChild);
-    box.style.gridTemplateColumns = 'repeat(' + state.tableSize + ',1fr)';
+    renderStepper('playersStep',
+      { sign: '−', off: state.players <= 2,             run: dropOne },
+      { sign: '+', off: state.players >= state.tableSize, run: raiseOne });
+    box.style.gridTemplateColumns = 'repeat(' + (state.tableSize - 1) + ',1fr)';
   }
 
   function renderPos() {
@@ -202,16 +211,29 @@
   }
 
   /* 快捷金额和输入框并存：点按钮直接填，也可以自己敲一个数 */
+  /* 加减键单独成块放在 label 左边，只显示符号不显示数值——
+     牌桌上是盲按，步长多少不重要，位置固定才重要。 */
+  function renderStepper(boxId, minus, plus) {
+    var box = $(boxId);
+    box.innerHTML = '';
+    [minus, plus].forEach(function (spec) {
+      var b = document.createElement('button');
+      b.className = 'add' + (spec.off ? ' off' : '');
+      b.textContent = spec.sign;
+      b.addEventListener('click', function () { if (!spec.off) spec.run(); });
+      box.appendChild(b);
+    });
+  }
+
   function renderMoney(boxId, key, presets, steps) {
     var box = $(boxId);
     box.innerHTML = '';
 
-    /* 加减键放最左边，紧挨着输入框——牌桌上单手操作，左边最好按。
-       步长跟当前档位走；「要跟」最低端还有一小段梯子 0→2→5。 */
+    /* 步长跟当前档位走；「要跟」最低端还有一小段梯子 0→2→5。 */
     if (steps) {
       var st = stepFor(state[key], presets, steps);
       var cur = state[key];
-      var ld = key === 'call' ? CALL_LADDER : null;
+      var ld = key === 'call' ? callLadder() : null;
       var top = ld ? ld[ld.length - 1] : 0;
       var up = null, down = null;
       if (ld && cur < top) {
@@ -222,20 +244,18 @@
       }
       if (up === null) up = cur + st;
       if (down === null) down = cur - st;
-      var noDown = ld ? cur <= 2 : cur - st < 0;
-      [['−', down, noDown], ['+', up, false]].forEach(function (p3) {
-        var b = document.createElement('button');
-        b.className = 'add' + (p3[2] || p3[1] < 0 ? ' off' : '');
-        b.textContent = p3[0] + Math.abs(p3[1] - cur);
-        b.addEventListener('click', function () {
-          if (p3[2] || p3[1] < 0) return;
-          state[key] = p3[1];
-          $(key).value = state[key] ? String(state[key]) : '';
-          renderMoney(boxId, key, presets, steps);
-          renderBettors(); save(); refresh();
-        });
-        box.appendChild(b);
-      });
+      // 减号沿梯子一路走回 0：翻牌前 5→2→0，翻牌后 5→0。
+      // 「过牌到我」= 要跟 0，是最常见的状态，必须按得回去。
+      var noDown = ld ? cur <= ld[0] : cur - st < 0;
+      var apply = function (v) {
+        state[key] = v;
+        $(key).value = state[key] ? String(state[key]) : '';
+        renderMoney(boxId, key, presets, steps);
+        renderBettors(); save(); refresh();
+      };
+      renderStepper(key === 'pot' ? 'potStep' : 'callStep',
+        { sign: '−', off: noDown || down < 0, run: function () { apply(down); } },
+        { sign: '+', off: false,               run: function () { apply(up); } });
     }
 
     presets.forEach(function (v) {
@@ -270,13 +290,10 @@
         box.appendChild(b);
       })(n);
     }
-    // 加号同样放最左边
-    var plus = document.createElement('button');
-    plus.className = 'add' + (calledCount() >= maxN ? ' off' : '');
-    plus.textContent = '+1';
-    plus.addEventListener('click', addOne);
-    box.insertBefore(plus, box.firstChild);
-    box.style.gridTemplateColumns = 'repeat(' + (maxN + 2) + ',1fr)';
+    renderStepper('calledStep',
+      { sign: '−', off: state.called <= 0,       run: dropCalled },
+      { sign: '+', off: calledCount() >= maxN,   run: addOne });
+    box.style.gridTemplateColumns = 'repeat(' + (maxN + 1) + ',1fr)';
   }
 
   function renderBettors() {
@@ -287,7 +304,7 @@
     $('calledRow').classList.toggle('dim', !facingBet() || boardCount() === 0);
     renderOppLevel();
     renderMoney('potSeg', 'pot', POT_PRESETS, POT_STEPS);
-    renderMoney('callSeg', 'call', CALL_PRESETS, CALL_STEPS);
+    renderMoney('callSeg', 'call', callPresets(), callSteps());
     // 位置只在翻牌前用得上；下注人数只在有人下注时才需要
     var preflop = state.board.every(function (c) { return c === null; });
     // 位置常驻可改。它虽然只参与翻牌前的判断，但会随「新一局」自动顺延，
@@ -371,7 +388,7 @@
       $('pot').value = String(state.pot);
       $('call').value = '';
       renderMoney('potSeg', 'pot', POT_PRESETS, POT_STEPS);
-      renderMoney('callSeg', 'call', CALL_PRESETS, CALL_STEPS);
+      renderMoney('callSeg', 'call', callPresets(), callSteps());
     }
     // 从点的那张一路选到本组最后一张，中间那张即使已经有牌也照样停一下，
     // 方便顺手改；走完本组才收起抽屉。
@@ -802,15 +819,23 @@
     for (var i = 0; i < presets.length; i++) if (val >= presets[i]) st = steps[i];
     return st;
   }
-  /* 要跟也是少放几档 + 可变步长：选 2 连按加号就是 4、6、8（翻牌前的加注），
-     选 20 一步 5，选 50 一步 10。 */
-  var CALL_PRESETS = [0, 2, 5, 10, 20, 50, 100];
-  /* 步长按「跨一档要几步」定：5→10 一步，10→20 两步，20→50 三步，
-     50→100 五步，100 往上每步 20 */
-  var CALL_STEPS   = [5, 5, 5,  5, 10, 10,  20];
-  /* 最低端单独走一小段梯子：0→2→5，之后才进入按档位的步长。
-     2 是一个大盲，5 之后每步 5、50 之后每步 10。 */
-  var CALL_LADDER  = [0, 2, 5];
+  /* 要跟也是少放几档 + 可变步长。
+     2 只在翻牌前有意义——那是一个大盲；翻牌后没人下 2 块，那一档就撤掉，
+     省出来的位置给 200。步长按「跨一档要几步」定：
+     5→10 一步，10→20 两步，20→50 三步，50→100 五步，100→200 五步，200 往上每步 50。 */
+  var CALL_PRESETS_PRE  = [0, 2, 5, 10, 20, 50, 100, 200];
+  var CALL_STEPS_PRE    = [5, 5, 5,  5, 10, 10,  20,  50];
+  var CALL_PRESETS_POST = [0, 5, 10, 20, 50, 100, 200];
+  var CALL_STEPS_POST   = [5, 5,  5, 10, 10,  20,  50];
+  /* 最低端单独走一小段梯子，之后才进入按档位的步长。
+     翻牌前 0→2→5（2 是一个大盲），翻牌后直接 0→5。 */
+  var CALL_LADDER_PRE   = [0, 2, 5];
+  var CALL_LADDER_POST  = [0, 5];
+
+  function preflopNow() { return boardCount() === 0; }
+  function callPresets() { return preflopNow() ? CALL_PRESETS_PRE : CALL_PRESETS_POST; }
+  function callSteps()   { return preflopNow() ? CALL_STEPS_PRE   : CALL_STEPS_POST; }
+  function callLadder()  { return preflopNow() ? CALL_LADDER_PRE  : CALL_LADDER_POST; }
 
   var POS = [
     { k: 'early', n: '前位' }, { k: 'mid', n: '中位' }, { k: 'late', n: '后位' },
@@ -1125,8 +1150,6 @@
       var b = e.target.closest('.pick');
       if (b) pickCard(parseInt(b.dataset.card, 10));
     });
-    $('playersLbl').addEventListener('click', dropOne);
-    $('calledLbl').addEventListener('click', addOne);
     $('tableSize').addEventListener('input', function () {
       var v = parseInt($('tableSize').value, 10);
       if (!(v >= 2 && v <= 10)) return;
@@ -1184,8 +1207,8 @@
         save();
         if (k !== 'stack') {
           renderMoney(k + 'Seg', k,
-            k === 'pot' ? POT_PRESETS : CALL_PRESETS,
-            k === 'pot' ? POT_STEPS : CALL_STEPS);
+            k === 'pot' ? POT_PRESETS : callPresets(),
+            k === 'pot' ? POT_STEPS : callSteps());
         }
         renderBettors(); refresh();
       });

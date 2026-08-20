@@ -116,7 +116,7 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 .improve{font-size:11.5px;color:var(--muted);margin-top:3px;height:17px;line-height:17px;overflow:hidden}
 .improve b{color:var(--win);font-weight:600;font-variant-numeric:tabular-nums}
 /* 左右分栏：左边文字、右边固定九个牌型。高度由右栏钉死，永远不变 */
-.made-wrap{display:flex;gap:12px;align-items:stretch;height:96px;margin-top:7px;
+.made-wrap{display:flex;gap:12px;align-items:stretch;height:104px;margin-top:7px;
   padding-top:7px;border-top:1px solid var(--line)}
 .made-left{flex:1;min-width:0}
 /* 九种牌型竖排，带比例条，撑满整块的高度 */
@@ -257,3 +257,16 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 /* 标签本身也是触发区，点一下就加/减一 */
 .seat-lbl.tap{cursor:pointer;-webkit-user-select:none;user-select:none}
 .seat-lbl.tap:active{color:var(--accent)}
+
+/* 加减键单独一列固定在最左边：四行的加减位置完全对齐，
+   牌桌上不用看就能按到。只显示符号，步长在旁边的预设条上看得见。 */
+.stepper{flex:0 0 62px;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.stepper button{
+  padding:7px 0;border:0;border-radius:8px;background:#1d3350;color:var(--accent);
+  font-size:15px;font-weight:600;line-height:1;font-family:inherit;cursor:pointer}
+.stepper button:active{transform:scale(.92)}
+.stepper button.off{opacity:.28;pointer-events:none}
+/* 加减挪出去之后标签就是纯文字了，可以窄一点。
+   「底池」「要跟」两个字不能折行，折了这一行就变高，整屏跟着抖。 */
+.seat-row .seat-lbl{flex:0 0 56px}
+.seat-row .money-lbl{flex:0 0 80px;white-space:nowrap}

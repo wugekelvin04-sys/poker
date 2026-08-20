@@ -1,5 +1,5 @@
 /* Service Worker：把全部资源预缓存，飞行模式下也能打开 */
-const VERSION = 'v49';
+const VERSION = 'v50';
 const CACHE = 'poker-cal-' + VERSION;
 
 // 子资源都带 ?v=VERSION，和 index.html 里的引用完全一致。
