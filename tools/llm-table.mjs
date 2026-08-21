@@ -60,7 +60,7 @@ const POS_CN = { btn: '庄位', sb: '小盲', bb: '大盲', late: '后位', mid:
 function newHand(st, id) {
   const rng = S.makeRng((st.seed * 1000003 + id * 7919) >>> 0);
   const deck = makeDeck(rng);
-  const btn = id % N;
+  const btn = ((id % 1000) % N + N) % N;
   const players = [];
   for (let i = 0; i < N; i++) {
     // 破产才补码，其余跨手保留
@@ -284,13 +284,17 @@ if (cmd === 'init') {
   const hands = parseInt(arg('hands', '40'), 10);
   const seed = parseInt(arg('seed', '1'), 10);
   OPP_LEVEL = arg('level', 'normal');
+  /* 多桌并行时给每桌一个手牌编号偏移，决策编号就不会跨桌撞车，
+     五桌的待决策点可以合并成一个批次一次问完，轮数不变。
+     apply 只认自己认识的编号，别桌的会被忽略。 */
+  const idBase = parseInt(arg('idbase', '0'), 10);
   const st = {
-    seed, total: hands, level: OPP_LEVEL,
+    seed, total: hands, level: OPP_LEVEL, idBase,
     stacks: new Array(N).fill(BUYIN), rebuys: new Array(N).fill(0),
     hands: [], nextId: 0, finished: []
   };
   // 一次性把所有牌局建出来，锁步推进
-  for (let i = 0; i < hands; i++) st.hands.push(newHand(st, i));
+  for (let i = 0; i < hands; i++) st.hands.push(newHand(st, idBase + i));
   // 建局时 stacks 会被 newHand 改（补码），这里同步回去
   save(arg('state', 'state.json'), st);
   console.log(`已开 ${hands} 手，座位0=算法(${OPP_LEVEL})，座位1/2/3=LLM 对手`);
