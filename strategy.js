@@ -242,6 +242,34 @@
     return Math.max(0.05, last[1] * Math.pow(bb / last[0], k));
   }
 
+  /* 我这手牌**现在**成了没有——听牌不算。
+
+     算法算的是「摊牌胜率」，默认后面两张牌白送给我看。同花听牌在
+     4 人底池里能算出 43% 的胜率，比均分的 25% 高得多，于是它判断
+     「我远远领先，加注要价值」——一手还没成的牌，把 400 的筹码推进去 300。
+
+     可听牌的胜率是要花钱买的：加注之后对手再加回来，我要么弃掉已经
+     投进去的钱，要么在明显落后的情况下继续加码。所以听牌最多跟注——
+     买牌可以，主动把价钱抬上去不行。
+
+     判「成了没有」时公共牌自己配的对不算：8♠8♥4♠ 上拿 JT，
+     evalHand 会算成「一对 8」，但那对 8 是桌上人人都有的。 */
+  var TWO_PAIR = 2, PAIR = 1;
+  function madeHand(g) {
+    var b = g.board.filter(function (c) { return c !== null; });
+    if (b.length < 3) return true;                 // 翻牌前不走这条
+    var E = global.PokerEngine;
+    var all = g.hero.concat(b);
+    var cat = E.evalHand(all) >>> 20;
+    if (cat >= TWO_PAIR) return true;
+    if (cat < PAIR) return false;                  // 高牌 = 没成牌
+    var cnt = {};
+    for (var i = 0; i < all.length; i++) {
+      var r = all[i] >> 2; cnt[r] = (cnt[r] || 0) + 1;
+    }
+    return cnt[g.hero[0] >> 2] >= 2 || cnt[g.hero[1] >> 2] >= 2;
+  }
+
   /* 「他加注了我」是算法从数字上唯一分辨不出、又最要命的一件事。
      同样是要跟 30：他主动下注 30，范围可以很宽；他把我的 10 加到 30，
      范围窄得多。所以这里不是打个折，是直接封顶——加注这个动作本身
@@ -567,7 +595,7 @@
     var verdict, cls, a3, amt3;
     if (edge < -0.02) { verdict = '弃牌 ✕'; cls = 'bad'; a3 = 'fold'; amt3 = 0; }
     else if (edge < 0.02) { verdict = '临界，看位置和对手'; cls = 'even'; a3 = 'marginal'; amt3 = call; }
-    else if ((eqR >= 1.6 * fair || eqR >= 0.65) && edge >= 0.15) {
+    else if ((eqR >= 1.6 * fair || eqR >= 0.65) && edge >= 0.15 && madeHand(g)) {
       amt3 = betSize(raiseTo);
       verdict = actText(g, '加注到', amt3); cls = 'good'; a3 = 'raise';
     } else {
@@ -624,6 +652,7 @@
     showdownPlayers: showdownPlayers,
     filterLen: filterLen,
     preflopLooseRange: preflopLooseRange,
+    madeHand: madeHand,
     activePctl: activePctl,
     wideTopPctl: wideTopPctl,
     scenarioSeed: scenarioSeed,
