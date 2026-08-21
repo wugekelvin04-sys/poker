@@ -22,7 +22,7 @@
   ];
   var SLOT_LABELS = ['手牌 1', '手牌 2', '翻牌 1', '翻牌 2', '翻牌 3', '转牌', '河牌'];
 
-  var APP_VERSION = 'v61';
+  var APP_VERSION = 'v62';
 
   var state = {
     hero: [null, null],
@@ -35,6 +35,10 @@
     call: 0,
     stack: 200,          // 我手上还有多少筹码，建议不能超过它
     called: 0,           // 已投钱的人数（含下注者）；0 = 不确定，按下注尺度自己估
+    raised: false,       // 这一注是「他加注了我」，不是「他主动下注」。
+                         // 算法从数字上分不出这两件事——同样是要跟 30，
+                         // 主动下注的范围很宽，加注我的范围窄得多。
+                         // 每换一条街自动清掉，免得一路带着错下去。
     pos: 'mid',          // 我的位置，决定开池范围
     hideHero: false,     // 桌上怕被瞄到时，把自己的两张牌盖起来；不影响任何计算
     showDist: false      // 成牌分布默认收起，一屏放得下
@@ -61,6 +65,7 @@
         if (typeof s.stack === 'number') state.stack = s.stack;
         if (s.called >= 0 && s.called <= 9) state.called = s.called;
         state.hideHero = !!s.hideHero;
+        state.raised = !!s.raised;
         state.showDist = !!s.showDist;
         if (POS.some(function (p) { return p.k === s.pos; })) state.pos = s.pos;
         if (typeof s.seat === 'number') state.seat = s.seat;
@@ -320,8 +325,12 @@
     // 翻牌前的加注是按大盲倍数，不是按池比例，快捷尺度用不上
     // 盲注位已经投过钱，只需补差额，而且那笔钱已经算在底池里了。
     // 不提醒的话很容易把整笔下注额填进「要跟」，把所需胜率抬到离谱。
-    $('hintRow').textContent = preflop
-      ? '翻牌前只看位置和起手牌，不用填金额'
+    // 没人下注就没「被加注」这回事；置灰保留占位，避免整块跳动
+    if (!facingBet()) state.raised = false;
+    $('hintRow').classList.toggle('dim', !facingBet());
+    $('raisedBtn').classList.toggle('on', !!state.raised);
+    $('hintTxt').textContent = preflop
+      ? '翻牌前只看位置和起手牌'
       : '';   // 说明去掉，但元素留着占位，避免翻牌前后高度跳动
   }
 
@@ -389,6 +398,7 @@
       }
       state.call = 0;      // 新一街还没人下注
       state.called = 0;    // 已跟人数跟着重来
+      state.raised = false;  // 上一街被加注了，跟这一街无关
       $('pot').value = String(state.pot);
       $('call').value = '';
       renderMoney('potSeg', 'pot', POT_PRESETS, POT_STEPS);
@@ -832,6 +842,10 @@
       state.hideHero = !state.hideHero;
       save(); renderSlots(); runNow();
     });
+    $('raisedBtn').addEventListener('click', function () {
+      state.raised = !state.raised;
+      save(); renderBettors(); compute();
+    });
     $('sheetClose').addEventListener('click', closePicker);
     $('sheetMask').addEventListener('click', closePicker);
     $('sheetRemove').addEventListener('click', function () {
@@ -853,6 +867,7 @@
           $('pot').value = String(state.pot); $('call').value = String(BIG_BLIND);
           state.players = state.tableSize;
           advanceSeat();
+          state.raised = false;
           state.hideHero = true;   // 新一局默认盖着，想看点一下牌背
           renderPlayers();
         }

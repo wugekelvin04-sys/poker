@@ -192,7 +192,17 @@ main{padding:8px 11px calc(var(--safe-b) + 6px);display:flex;flex-direction:colu
 
 .hint{font-size:11px;color:var(--dim);margin-top:7px;line-height:1.4}
 /* 内容可空（翻牌后不显示说明），高度固定住防止跳动 */
-#hintRow{min-height:15px}
+#hintRow{min-height:20px;display:flex;align-items:center;gap:8px}
+/* 「被加注」是算法自己看不出来的一件事：同样是要跟 30，
+   对面主动下注和对面把我的注加到 30，背后的牌力天差地别。
+   打对勾就按「他加注了」来算对手范围。 */
+.flag{
+  flex:0 0 auto;padding:3px 9px;border:1px solid var(--line);border-radius:999px;
+  background:var(--panel-2);color:var(--muted);font-size:11px;font-family:inherit;
+  line-height:1.2;cursor:pointer;transition:transform .1s}
+.flag:active{transform:scale(.94)}
+.flag.on{background:var(--tie);border-color:transparent;color:#1b1206;font-weight:600}
+#hintRow.dim .flag{opacity:.3;pointer-events:none}
 .hint b{color:var(--muted);font-weight:600}
 #bettors{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
 

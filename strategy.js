@@ -242,16 +242,36 @@
     return Math.max(0.05, last[1] * Math.pow(bb / last[0], k));
   }
 
+  /* 「他加注了我」是算法从数字上唯一分辨不出、又最要命的一件事。
+     同样是要跟 30：他主动下注 30，范围可以很宽；他把我的 10 加到 30，
+     范围窄得多。所以这里不是打个折，是直接封顶——加注这个动作本身
+     就把范围钉死了，底池多大、他是不是跟注站，都改不了这一点。
+
+     数值来自 20 万手/格的成对种子测试。从前 5% 到前 12% 是一段平台
+     （平均 +3.5~+3.7 BB/100），再松就开始掉。取平台上最松的一档：
+     规则型机器人很少诈唬加注，测试量不出「见加注就跑」的代价，
+     所以不该顺着这个方向一路收到底。
+
+     娱乐局封得比老手局松，是因为娱乐玩家真会拿着听牌和中对乱加。
+     老手那档收得最紧，是「等效宽度」而不是字面上的加注范围：
+     老手的加注范围其实更宽，但里面掺了诈唬，平均牌力反而低；
+     这套百分位筛子表达不了两极化，只能用一个更窄的宽度去近似。 */
+  var RAISED_CAP = { loose: 0.12, normal: 0.09, tight: 0.06 };
+
   /* 这一轮实际该用的对手范围 */
   function activePctl(g) {
     var n = boardCount(g);
     // 翻牌前且没人加注：大家都还没投钱，按随机牌算
     if (n === 0 && !facingBet(g)) return 1;
-    if (n === 0 && g.oppLevel === 'loose')
-      return preflopLooseRange((g.call + posted(g)) / BIG_BLIND);
-    var base = n >= 3 ? oppLevel(g).board : oppLevel(g).pctl;
-    var tight = g.oppLevel === 'loose' ? STREET_TIGHTEN_LOOSE : STREET_TIGHTEN;
-    var p = base * (tight[n] || 1) * betSizeFactor(g);
+    var p;
+    if (n === 0 && g.oppLevel === 'loose') {
+      p = preflopLooseRange((g.call + posted(g)) / BIG_BLIND);
+    } else {
+      var base = n >= 3 ? oppLevel(g).board : oppLevel(g).pctl;
+      var tight = g.oppLevel === 'loose' ? STREET_TIGHTEN_LOOSE : STREET_TIGHTEN;
+      p = base * (tight[n] || 1) * betSizeFactor(g);
+    }
+    if (g.raised) p = Math.min(p, RAISED_CAP[g.oppLevel] || RAISED_CAP.normal);
     return Math.max(0.05, Math.min(1, p));
   }
 

@@ -106,6 +106,7 @@ function heroDecision(p, ctx) {
     pot: ctx.potBefore,            // 本轮下注之前的底池
     call: ctx.toCall,
     called: ctx.calledThisRound,   // 本轮已投钱的对手数（含下注者）
+    raised: ctx.raised,            // 这一注是被加注，不是对方主动下注
     stack: p.stack
   };
 
@@ -312,7 +313,7 @@ function playHand(btn) {
   for (let i = 0; i < N; i++) {
     const p = players[i];
     p.cards = [DECK[5 + 2 * i], DECK[6 + 2 * i]];
-    p.folded = false; p.allin = false; p.put = 0; p.roundPut = 0;
+    p.folded = false; p.allin = false; p.put = 0; p.roundPut = 0; p.aggThisStreet = false;
   }
 
   const sbSeat = (btn + 1) % N, bbSeat = (btn + 2) % N;
@@ -352,7 +353,11 @@ function playHand(btn) {
               pos: posOf(seat, btn),
               potBefore: potNow - roundSum,
               toCall,
-              calledThisRound: players.filter(x => x !== p && !x.folded && x.roundPut > 0).length
+              calledThisRound: players.filter(x => x !== p && !x.folded && x.roundPut > 0).length,
+              /* 我这条街下过注，现在又要跟钱——只可能是被人加注了。
+                 这正是 App 里那个「被加注」开关，用户在牌桌上一眼就知道，
+                 算法光看底池和要跟的数字却分不出来。 */
+              raised: p.aggThisStreet && toCall > 0 && street > 0
             });
             if (p.hero && street === 0 && d.act !== 'fold' && d.act !== 'check') heroPlayed = true;
           } else {
@@ -385,6 +390,7 @@ function playHand(btn) {
             post(p, add);
             if (p.roundPut > currentBet) {
               minRaise = p.roundPut - currentBet; currentBet = p.roundPut;
+              p.aggThisStreet = true;   // 这条街我主动下过注/加过注
               acted = 0; raisesThisStreet++;
             }
           }
@@ -403,7 +409,7 @@ function playHand(btn) {
     if (alive().length === 1) break;
     if (street === 3) break;
     street++;
-    for (const p of players) p.roundPut = 0;
+    for (const p of players) { p.roundPut = 0; p.aggThisStreet = false; }
     currentBet = 0; minRaise = BB; raisesThisStreet = 0;
     if (canAct().length <= 1) {
       // 大家都全下了，直接发完剩余公共牌

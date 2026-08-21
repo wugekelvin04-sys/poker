@@ -10,10 +10,10 @@
 <meta name="apple-mobile-web-app-title" content="胜率">
 <meta name="theme-color" content="#0b0e13">
 <meta name="color-scheme" content="dark">
-<link rel="manifest" href="manifest.webmanifest?v=v61">
+<link rel="manifest" href="manifest.webmanifest?v=v62">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v61">
+<link rel="stylesheet" href="style.css?v=v62">
 </head>
 <body>
 
@@ -81,7 +81,7 @@
       <label class="money-lbl">要跟<input id="call" type="text" inputmode="numeric" autocomplete="off"></label>
       <div class="seg money" id="callSeg"></div>
     </div>
-    <p class="hint" id="hintRow">原底池 = 本轮下注<b>之前</b>的底池，一整轮不用改；本轮下的注由「已跟几人」自动算</p>
+    <div class="hint" id="hintRow"><button class="flag" id="raisedBtn" type="button">被加注</button><span id="hintTxt"></span></div>
     <div class="odds-out" id="oddsOut">填入底池金额</div>
   </section>
 
@@ -101,11 +101,11 @@
   <div class="deck" id="deck"></div>
 </section>
 
-<script src="engine.js?v=v61"></script>
-<script src="sim.js?v=v61"></script>
-<script src="preflop.js?v=v61"></script>
-<script src="strategy.js?v=v61"></script>
-<script src="app.js?v=v61"></script>
+<script src="engine.js?v=v62"></script>
+<script src="sim.js?v=v62"></script>
+<script src="preflop.js?v=v62"></script>
+<script src="strategy.js?v=v62"></script>
+<script src="app.js?v=v62"></script>
 <script>
 /* 自愈：万一缓存里 HTML 和 JS 版本对不上导致初始化失败，
    自动清掉缓存重新加载一次，避免用户面对一个死掉的界面。
