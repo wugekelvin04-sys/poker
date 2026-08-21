@@ -242,7 +242,7 @@
     return Math.max(0.05, last[1] * Math.pow(bb / last[0], k));
   }
 
-  /* 我这手牌**现在**成了没有——听牌不算。
+  /* 我这手牌**现在**成了没有——听牌不算，纯靠公共牌凑出来的也不算。
 
      算法算的是「摊牌胜率」，默认后面两张牌白送给我看。同花听牌在
      4 人底池里能算出 43% 的胜率，比均分的 25% 高得多，于是它判断
@@ -252,22 +252,55 @@
      投进去的钱，要么在明显落后的情况下继续加码。所以听牌最多跟注——
      买牌可以，主动把价钱抬上去不行。
 
-     判「成了没有」时公共牌自己配的对不算：8♠8♥4♠ 上拿 JT，
-     evalHand 会算成「一对 8」，但那对 8 是桌上人人都有的。 */
-  var TWO_PAIR = 2, PAIR = 1;
+     光看 evalHand 的牌型等级不够，必须确认**我的手牌真的参与成牌**：
+     8♠8♥4♠4♣ 的牌面上拿 JT，evalHand 报的是「两对 8 和 4」，
+     可那两对是桌上人人都有的，我手里那张 J 只是个踢脚。
+     同理 888 的牌面人人有三条，56789 的牌面人人有顺子，
+     五张同花的牌面人人有同花。这些一律按「没成牌」处理。
+
+     所以按牌型分别验参与：
+       对子系（一对/两对/三条/葫芦/四条）—— 我的某张牌的点数在七张里出现 ≥2 次
+       同花系（同花/同花顺）           —— 我至少有一张是那个花色
+       顺子                          —— 顺子那五个点数里至少含我一张牌 */
+  var HIGH_CARD = 0, STRAIGHT = 4, FLUSH = 5, STRAIGHT_FLUSH = 8;
   function madeHand(g) {
     var b = g.board.filter(function (c) { return c !== null; });
     if (b.length < 3) return true;                 // 翻牌前不走这条
-    var E = global.PokerEngine;
     var all = g.hero.concat(b);
-    var cat = E.evalHand(all) >>> 20;
-    if (cat >= TWO_PAIR) return true;
-    if (cat < PAIR) return false;                  // 高牌 = 没成牌
-    var cnt = {};
-    for (var i = 0; i < all.length; i++) {
-      var r = all[i] >> 2; cnt[r] = (cnt[r] || 0) + 1;
+    var cat = global.PokerEngine.evalHand(all) >>> 20;
+    if (cat === HIGH_CARD) return false;           // 高牌 = 没成牌
+
+    var r0 = g.hero[0] >> 2, r1 = g.hero[1] >> 2;
+    var i, cnt = {}, suit = [0, 0, 0, 0], mask = 0;
+    for (i = 0; i < all.length; i++) {
+      var r = all[i] >> 2;
+      cnt[r] = (cnt[r] || 0) + 1;
+      suit[all[i] & 3]++;
+      mask |= 1 << r;
     }
-    return cnt[g.hero[0] >> 2] >= 2 || cnt[g.hero[1] >> 2] >= 2;
+
+    if (cat === FLUSH || cat === STRAIGHT_FLUSH) {
+      for (i = 0; i < 4; i++) {
+        if (suit[i] >= 5) return (g.hero[0] & 3) === i || (g.hero[1] & 3) === i;
+      }
+      return false;
+    }
+    if (cat === STRAIGHT) {
+      // 从高往低找成的那副顺子，看我的牌在不在这五个点数里
+      var wheel = (mask & 0x100F) === 0x100F;      // 轮子 A-2-3-4-5
+      for (var hi = 12; hi >= 4; hi--) {
+        var run = 0x1F << (hi - 4);
+        if ((mask & run) === run)
+          return !!((run >> r0) & 1) || !!((run >> r1) & 1);
+      }
+      if (wheel) {
+        var w = 0x100F;                            // A,2,3,4,5
+        return !!((w >> r0) & 1) || !!((w >> r1) & 1);
+      }
+      return false;
+    }
+    // 对子系：我的牌得真的配上对
+    return cnt[r0] >= 2 || cnt[r1] >= 2;
   }
 
   /* 「他加注了我」是算法从数字上唯一分辨不出、又最要命的一件事。
